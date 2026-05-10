@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
@@ -44,11 +45,20 @@ async def lifespan(app: FastAPI):
         api_key, \
         base_url, \
         llm_model
-    asr_service = SenseVoiceService()
-    chatbot_service = LLMApiService()
-    tts_service = QwenTTSService()
-    vad_model = load_silero_vad()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    chatbot_service = LLMApiService()
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_asr = loop.run_in_executor(pool, SenseVoiceService)
+        f_tts = loop.run_in_executor(pool, QwenTTSService)
+        f_vad = loop.run_in_executor(pool, load_silero_vad)
+
+        asr_service, tts_service, vad_model = await asyncio.gather(
+            f_asr, f_tts, f_vad
+        )
+
     vad_model = vad_model.to(device)  # type: ignore
 
     yield
@@ -96,10 +106,10 @@ async def realtime_chat(websocket: WebSocket):
                 if "start" in timestamp:
                     # 转换为相对于当前 buffer 的索引
                     timestamp_start = timestamp["start"] - buffer_offset
-                    print(f'{timestamp_start=}')
+                    # print(f'{timestamp_start=}')
                 elif "end" in timestamp:
                     timestamp_end = timestamp["end"] - buffer_offset
-                    print(f'{timestamp_end=}')
+                    # print(f'{timestamp_end=}')
                     if timestamp_start and timestamp_end > timestamp_start:
                         chunk = buffer[timestamp_start:timestamp_end]
                         await audio_queue.put(chunk)
@@ -134,7 +144,7 @@ async def asr_worker(websocket: WebSocket, audio_queue: asyncio.Queue):
         try:
             audio = await audio_queue.get()
             asr_result = await asr_service.transcribe(audio)
-            print(f'{asr_result=}')
+            # print(f'{asr_result=}')
             await asr_content_queue.put(asr_result)
         except asyncio.CancelledError:
             chatbot_task.cancel()
@@ -213,7 +223,7 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
         while True:
             llm_content: str = await llm_content_queue.get()
             response_audio_bytes = await tts_service.generate(llm_content)
-            print('发送音频数据')
+            # print('发送音频数据')
             await websocket.send_bytes(response_audio_bytes)
     except asyncio.CancelledError as e:
         raise asyncio.CancelledError(f"tts worker error: {e}")
