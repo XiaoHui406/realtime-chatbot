@@ -33,7 +33,8 @@ class LLMApiService(ChatbotService):
         )
         self.messages: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
-                role='system', content='用户的输入来自实时asr，如果你觉得用户没说完，请调用no_reply方法'),
+                role='system',
+                content='用户的输入来自实时asr，如果你觉得用户没说完，请调用no_reply方法。回复保证只有一段话且使用纯文本，禁止使用markdown格式回复'),
         ]
 
         if initial_prompt:
@@ -98,6 +99,7 @@ class LLMApiService(ChatbotService):
             # 把回复存入消息列表
             if len(response_content_list) > 0:
                 response_message = ''.join(response_content_list)
+                print(f'{response_message=}')
                 self.messages.append(
                     ChatCompletionAssistantMessageParam(
                         role='assistant', content=response_message
