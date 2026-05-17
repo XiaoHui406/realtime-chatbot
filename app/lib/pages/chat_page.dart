@@ -31,6 +31,14 @@ class _ChatPageState extends State<ChatPage> {
   static const int _chunkSize = 1024; // 512 samples * 2 bytes (int16)
 
   @override
+  void initState() {
+    super.initState();
+    _playerService.onPlayingChanged = (playing) {
+      if (mounted) setState(() => _isPlaying = playing);
+    };
+  }
+
+  @override
   void dispose() {
     _disconnect();
     _recorderService.dispose();
@@ -82,7 +90,8 @@ class _ChatPageState extends State<ChatPage> {
           _audioBuffer.addAll(audioData);
           while (_audioBuffer.length >= _chunkSize) {
             final chunk = Uint8List.fromList(
-                _audioBuffer.sublist(0, _chunkSize));
+              _audioBuffer.sublist(0, _chunkSize),
+            );
             _audioBuffer.removeRange(0, _chunkSize);
             _wsService.sendAudio(chunk);
           }
@@ -110,11 +119,7 @@ class _ChatPageState extends State<ChatPage> {
       final float32List = bytesToFloat32List(message);
       _playerService.playFloat32Pcm(float32List, 24000);
       setState(() {
-        _isPlaying = true;
         _messages.add(_ChatMessage(text: '[AI voice response]', isUser: false));
-      });
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _isPlaying = false);
       });
     }
   }
@@ -130,6 +135,7 @@ class _ChatPageState extends State<ChatPage> {
       _wsService.disconnect();
     }
     _recorderService.stop();
+    _playerService.stop();
 
     if (mounted) {
       setState(() {
@@ -210,10 +216,7 @@ class _ChatPageState extends State<ChatPage> {
             size: 20,
             color: msg.isUser ? Colors.blue : Colors.green,
           ),
-          title: Text(
-            msg.text,
-            style: const TextStyle(fontSize: 14),
-          ),
+          title: Text(msg.text, style: const TextStyle(fontSize: 14)),
         );
       },
     );
@@ -222,7 +225,9 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildMicButton() {
     return FloatingActionButton.extended(
       onPressed: _toggleConnection,
-      backgroundColor: _isConnected ? Colors.red : Theme.of(context).colorScheme.primary,
+      backgroundColor: _isConnected
+          ? Colors.red
+          : Theme.of(context).colorScheme.primary,
       icon: Icon(_isConnected ? Icons.stop : Icons.mic),
       label: Text(_isConnected ? 'Disconnect' : 'Connect'),
     );
