@@ -25,7 +25,6 @@ BUFFER_MAX_SIZE = CHUNK_SIZE * 1000
 
 
 asr_service: ASRService | None = None
-chatbot_service: ChatbotService | None = None
 tts_service: TTSService | None = None
 vad_model = None
 device = None
@@ -38,7 +37,6 @@ llm_model: str | None = None
 async def lifespan(app: FastAPI):
     global \
         asr_service, \
-        chatbot_service, \
         tts_service, \
         vad_model, \
         device, \
@@ -47,7 +45,6 @@ async def lifespan(app: FastAPI):
         llm_model
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    chatbot_service = LLMApiService()
 
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -174,8 +171,7 @@ separate_char_list: List[str] = [
 
 
 async def chatbot_worker(websocket: WebSocket, asr_content_queue: asyncio.Queue[str]):
-    if not chatbot_service:
-        raise ValueError("chatbot service is none")
+    chatbot_service: ChatbotService = LLMApiService()
 
     llm_content_queue = asyncio.Queue()
     tts_task = asyncio.create_task(tts_worker(websocket, llm_content_queue))
@@ -188,6 +184,8 @@ async def chatbot_worker(websocket: WebSocket, asr_content_queue: asyncio.Queue[
                 # print(f'{content=}')
                 content = content.strip()
                 response_content += content
+                if len(response_content) <= 5:
+                    continue
                 for char in separate_char_list:
                     index = content.find(char)
                     # 发现分隔符
