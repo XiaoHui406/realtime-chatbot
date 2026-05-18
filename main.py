@@ -182,27 +182,24 @@ async def chatbot_worker(websocket: WebSocket, asr_content_queue: asyncio.Queue[
             response_content = ""
             async for content in chatbot_service.chat(asr_content):
                 # print(f'{content=}')
-                content = content.strip()
-                response_content += content
-                if len(response_content) <= 5:
-                    continue
+                response_content += content.strip()
                 for char in separate_char_list:
-                    index = content.find(char)
+                    index = response_content.rfind(char)
                     # 发现分隔符
                     if index != -1:
+                        if index <= 5:
+                            continue
                         # 如果分隔符是content的最后一个字符
                         # 把response_content放入队列，并置空
-                        if index == len(content) - 1:
+                        elif index == len(content) - 1:
                             await llm_content_queue.put(response_content)
                             response_content = ''
                         # 如果分隔符不是content的最后一个字符
                         # 取response_content到分隔符为止的字符串（包括分隔符）放入队列
                         # 把response_content赋值为分隔符到末尾的字符串
                         else:
-                            await llm_content_queue.put(response_content[:len(
-                                response_content) - len(content) + index + 1])
-                            response_content = response_content[len(
-                                response_content) - len(content) + index + 1:]
+                            await llm_content_queue.put(response_content[:index + 1])
+                            response_content = response_content[index + 1:]
                         # 发现分隔符后，处理完就停止循环
                         break
         except asyncio.CancelledError:
