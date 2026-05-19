@@ -34,7 +34,7 @@ class LLMApiService(ChatbotService):
         self.messages: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
                 role='system',
-                content='用户的输入来自实时asr，如果你觉得用户没说完，请调用no_reply方法。回复保证只有一段话且使用纯文本，禁止使用markdown格式回复'),
+                content='这是一款ai语音聊天应用，用户的输入来自实时asr。回复保证只有一段话且使用纯文本，禁止使用markdown格式回复'),
         ]
 
         if initial_prompt:
@@ -75,7 +75,12 @@ class LLMApiService(ChatbotService):
                 model=self.llm_model,
                 messages=self.messages,
                 tools=[no_reply_json_schema],
-                stream=True
+                stream=True,
+                extra_body={
+                    "thinking": {
+                        "type": "disabled"
+                    }
+                }
             )
 
             response_content_list: List[str] = []
