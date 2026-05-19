@@ -178,6 +178,7 @@ async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queu
                     index = response_content.rfind(char)
                     # 发现分隔符
                     if index != -1:
+                        # 句子过短，可能使生成的音频质量差，故跳过处理并继续循环
                         if index <= 5:
                             continue
                         # 如果分隔符是content的最后一个字符
@@ -187,12 +188,16 @@ async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queu
                             response_content = ''
                         # 如果分隔符不是content的最后一个字符
                         # 取response_content到分隔符为止的字符串（包括分隔符）放入队列
-                        # 把response_content赋值为分隔符到末尾的字符串
+                        # 把response_content赋值为分隔符到末尾（不包括分隔符）的字符串
                         else:
                             await llm_content_queue.put(response_content[:index + 1])
                             response_content = response_content[index + 1:]
                         # 发现分隔符后，处理完就停止循环
                         break
+            # 当大模型回复结束，但response_content不为空时(比如最后一句话没有以分隔符结尾)
+            # 将response_content放入队列，此时一轮循环结束，之后response_content会被初始化，这里不必置空
+            if len(response_content) > 0:
+                await llm_content_queue.put(response_content)
         except asyncio.CancelledError:
             raise
 
