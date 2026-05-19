@@ -72,7 +72,12 @@ async def realtime_chat(websocket: WebSocket):
     buffer_offset = 0  # 跟踪 buffer 的起始偏移量
 
     audio_queue = asyncio.Queue()
-    asr_task = asyncio.create_task(asr_worker(websocket, audio_queue))
+    asr_content_queue: asyncio.Queue[str] = asyncio.Queue()
+    llm_content_queue: asyncio.Queue[str] = asyncio.Queue()
+    asr_task = asyncio.create_task(asr_worker(audio_queue, asr_content_queue))
+    chatbot_task = asyncio.create_task(
+        chatbot_worker(asr_content_queue, llm_content_queue))
+    tts_task = asyncio.create_task(tts_worker(websocket, llm_content_queue))
     vad_iter = VADIterator(model=vad_model)
 
     timestamp_start: int | float | None = None
@@ -129,29 +134,19 @@ async def realtime_chat(websocket: WebSocket):
             pass
 
 
-async def asr_worker(websocket: WebSocket, audio_queue: asyncio.Queue):
+async def asr_worker(audio_queue: asyncio.Queue, asr_content_queue: asyncio.Queue[str]):
     """后台任务：从队列中获取音频片段，执行转写并发送结果"""
     if not asr_service:
         raise ValueError("asr service is none")
-    asr_content_queue = asyncio.Queue()
-    chatbot_task = asyncio.create_task(
-        chatbot_worker(websocket, asr_content_queue))
 
     while True:
         try:
             audio = await audio_queue.get()
             asr_result = await asr_service.transcribe(audio)
-            # print(f'{asr_result=}')
+            print(f'{asr_result=}')
             await asr_content_queue.put(asr_result)
         except asyncio.CancelledError:
-            chatbot_task.cancel()
-            try:
-                await chatbot_task
-            except asyncio.CancelledError:
-                pass
-            break
-        except Exception as e:
-            print(f"ASR worker error: {e}")
+            raise
 
 
 separate_char_list: List[str] = [
@@ -170,18 +165,14 @@ separate_char_list: List[str] = [
 ]
 
 
-async def chatbot_worker(websocket: WebSocket, asr_content_queue: asyncio.Queue[str]):
+async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queue: asyncio.Queue[str]):
     chatbot_service: ChatbotService = LLMApiService()
-
-    llm_content_queue = asyncio.Queue()
-    tts_task = asyncio.create_task(tts_worker(websocket, llm_content_queue))
 
     while True:
         try:
             asr_content: str = await asr_content_queue.get()
             response_content = ""
             async for content in chatbot_service.chat(asr_content):
-                # print(f'{content=}')
                 response_content += content.strip()
                 for char in separate_char_list:
                     index = response_content.rfind(char)
@@ -203,12 +194,7 @@ async def chatbot_worker(websocket: WebSocket, asr_content_queue: asyncio.Queue[
                         # 发现分隔符后，处理完就停止循环
                         break
         except asyncio.CancelledError:
-            tts_task.cancel()
-            try:
-                await tts_task
-            except asyncio.CancelledError:
-                pass
-            break
+            raise
 
 
 async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]):
@@ -220,8 +206,8 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
             response_audio_bytes = await tts_service.generate(llm_content)
             # print('发送音频数据')
             await websocket.send_bytes(response_audio_bytes)
-    except asyncio.CancelledError as e:
-        raise asyncio.CancelledError(f"tts worker error: {e}")
+    except asyncio.CancelledError:
+        raise
 
 
 if __name__ == "__main__":
