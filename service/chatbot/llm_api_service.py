@@ -16,9 +16,10 @@ from openai.types.chat import ChatCompletionMessageParam, \
 from openai.types.chat.chat_completion_message_function_tool_call import Function
 
 from service.chatbot.interface.chatbot_service import ChatbotService
+from utils.agent_tool_manager import AgentToolManager
 
 
-class LLMApiService(ChatbotService):
+class LLMAPIService(ChatbotService):
     def __init__(
         self,
         initial_prompt: str | None = None
@@ -28,6 +29,8 @@ class LLMApiService(ChatbotService):
         self.base_url = os.getenv("BASE_URL")
         self.llm_model = os.getenv("MODEL")
         assert self.api_key and self.base_url and self.llm_model
+
+        self.tool_manager = AgentToolManager()
 
         self.client = AsyncOpenAI(
             base_url=self.base_url,
@@ -65,6 +68,7 @@ class LLMApiService(ChatbotService):
                 model=self.llm_model,
                 messages=self.messages,
                 stream=True,
+                tools=self.tool_manager.generate_tools(),
                 extra_body={
                     "thinking": {
                         "type": "disabled"
@@ -105,7 +109,8 @@ class LLMApiService(ChatbotService):
                     for (index, tool_call) in tool_call_map.items():
                         tool_call.function.arguments = ''.join(
                             tool_call_args_map[index])
-                        ...
+                        tool_callback = await self.tool_manager.acall_tool(tool_call=tool_call_map[index])
+                        self.messages.append(tool_callback)
 
                 elif choice.finish_reason == 'stop':
                     if response_content_list:

@@ -13,7 +13,7 @@ from service.asr.sensevoice_service import SenseVoiceService
 from service.asr.whisper_service import WhisperService
 from service.asr.interface.asr_service import ASRService
 from service.chatbot.interface.chatbot_service import ChatbotService
-from service.chatbot.llm_api_service import LLMApiService
+from service.chatbot.llm_api_service import LLMAPIService
 from service.tts.interface.tts_service import TTSService
 from service.tts.qwen_tts_service import QwenTTSService
 
@@ -166,7 +166,7 @@ separate_char_list: List[str] = [
 
 
 async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queue: asyncio.Queue[str]):
-    chatbot_service: ChatbotService = LLMApiService()
+    chatbot_service: ChatbotService = LLMAPIService()
 
     while True:
         try:
