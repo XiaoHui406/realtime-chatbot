@@ -19,9 +19,11 @@ from service.tts.qwen_tts_service import QwenTTSService
 
 
 SAMPLE_RATE: int = 16000
-CHUNK_DURATION: float = 0.032
+CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
 BUFFER_MAX_SIZE = CHUNK_SIZE * 1000
+
+MAX_SEGMENT_GAP: float = 0.5  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
 
 
 asr_service: ASRService | None = None
@@ -102,17 +104,30 @@ async def realtime_chat(websocket: WebSocket):
             # print(f'{len(buffer)=}')
 
             timestamp: Dict[str, float | int] | None = vad_iter(
-                x=torch.Tensor(waveform).to(device)
-            )
+                x=torch.as_tensor(data=waveform, device=device)
+            )  # {'start': xxx}, {'end': xxx}
             if timestamp:
+                # 如果时间戳的key为start，说明检测出了一个片段的开头
                 if "start" in timestamp:
-                    # 转换为相对于当前 buffer 的索引
-                    timestamp_start = timestamp["start"] - buffer_offset
-                    # print(f'{timestamp_start=}')
+                    # 如果此时timestamp_start和timestamp_end都不是None
+                    # 代表之前检测到一个片段，但和当前片段的时间差不超过MAX_SEGMENT_GAP
+                    # 因此将两个片段视为同一个，将上一个片段的timestamp_end置为None
+                    if timestamp_start and timestamp_end:
+                        if (timestamp['start'] - timestamp_end) / SAMPLE_RATE <= MAX_SEGMENT_GAP:
+                            timestamp_end = None
+                    else:
+                        # 转换为相对于当前 buffer 的索引
+                        timestamp_start = timestamp["start"] - buffer_offset
+                        # print(f'{timestamp_start=}')
+                # 如果时间戳的key为start，说明检测出了一个片段的末尾
                 elif "end" in timestamp:
                     timestamp_end = timestamp["end"] - buffer_offset
-                    # print(f'{timestamp_end=}')
-                    if timestamp_start and timestamp_end > timestamp_start:
+            else:
+                # 如果没有时间戳(timestamp is None)
+                # 检查timestamp_start和timestamp_end是否为None
+                if timestamp_start and timestamp_end:
+                    # 如果时间差超过MAX_SEGMENT_GAP，将片段发送给asr_worker
+                    if (len(buffer) - timestamp_end) / SAMPLE_RATE > MAX_SEGMENT_GAP:
                         chunk = buffer[timestamp_start:timestamp_end]
                         await audio_queue.put(chunk)
                         if len(buffer) > BUFFER_MAX_SIZE:
@@ -120,10 +135,6 @@ async def realtime_chat(websocket: WebSocket):
                             buffer_offset += timestamp_end  # 更新偏移量
                             vad_iter.reset_states()
                         timestamp_start, timestamp_end = None, None
-                else:
-                    continue
-            else:
-                continue
     except Exception as e:
         print(f"Main loop error: {e}")
     finally:
@@ -195,7 +206,7 @@ async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queu
                         # 发现分隔符后，处理完就停止循环
                         break
             # 当大模型回复结束，但response_content不为空时(比如最后一句话没有以分隔符结尾)
-            # 将response_content放入队列，此时一轮循环结束，之后response_content会被初始化，这里不必置空
+            # 将response_content放入队列，此时循环结束
             if len(response_content) > 0:
                 await llm_content_queue.put(response_content)
         except asyncio.CancelledError:
