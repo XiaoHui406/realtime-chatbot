@@ -20,7 +20,10 @@ class SenseVoiceService(ASRService):
                 model='iic/SenseVoiceSmall',
                 device='cpu'
             )
-            self.model.model.to('cuda')
+            device = torch.device('cuda:0')
+            self.model.model.to(device)
+            self.model.kwargs['device'] = 'cuda:0'  # type: ignore
+            self.model._base_kwargs_map['kwargs']['device'] = 'cuda:0'
 
     async def transcribe(self, chunk: ndarray) -> str:
         asr_result = await asyncio.to_thread(
