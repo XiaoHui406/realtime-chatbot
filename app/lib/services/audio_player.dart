@@ -1,59 +1,57 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:typed_data';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:just_audio/just_audio.dart';
 import 'wav_utils.dart';
-
-class _AudioItem {
-  final Float32List samples;
-  final int sampleRate;
-  _AudioItem(this.samples, this.sampleRate);
-}
 
 class AudioPlayerService {
   final AudioPlayer _player = AudioPlayer();
-  final Queue<_AudioItem> _queue = Queue();
-  bool _isPlaying = false;
-  StreamSubscription? _completeSub;
+  final ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
+  StreamSubscription? _stateSub;
   void Function(bool)? onPlayingChanged;
+  bool _sourceSet = false;
+  bool _isPlaying = false;
 
   AudioPlayerService() {
-    _completeSub = _player.onPlayerComplete.listen((_) {
-      _playNext();
+    _stateSub = _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed && _isPlaying) {
+        _isPlaying = false;
+        onPlayingChanged?.call(false);
+      }
     });
   }
 
   Future<void> playFloat32Pcm(Float32List samples, int sampleRate) async {
-    _queue.add(_AudioItem(samples, sampleRate));
-    if (!_isPlaying) {
-      _playNext();
-    }
-  }
+    final wavBytes = createWavFromFloat32(samples, sampleRate);
+    final dataUri = Uri.dataFromBytes(wavBytes, mimeType: 'audio/wav');
+    final source = AudioSource.uri(dataUri);
 
-  void _playNext() {
-    if (_queue.isEmpty) {
-      _isPlaying = false;
-      onPlayingChanged?.call(false);
-      return;
+    if (!_sourceSet) {
+      await _player.setAudioSource(_playlist);
+      _sourceSet = true;
     }
 
-    _isPlaying = true;
-    onPlayingChanged?.call(true);
-    final item = _queue.removeFirst();
-    final wavBytes = createWavFromFloat32(item.samples, item.sampleRate);
-    _player.play(BytesSource(wavBytes));
+    await _playlist.add(source);
+
+    // Resume if player had stopped/completed before the new chunk arrived
+    if (!_player.playing) {
+      _player.play();
+      if (!_isPlaying) {
+        _isPlaying = true;
+        onPlayingChanged?.call(true);
+      }
+    }
   }
 
   void stop() {
-    _queue.clear();
     _player.stop();
+    _playlist.clear();
+    _sourceSet = false;
     _isPlaying = false;
     onPlayingChanged?.call(false);
   }
 
   Future<void> dispose() async {
-    _completeSub?.cancel();
-    _queue.clear();
+    _stateSub?.cancel();
     await _player.dispose();
   }
 }
