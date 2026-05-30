@@ -1,4 +1,5 @@
 import asyncio
+from typing import AsyncGenerator
 
 from faster_qwen3_tts import FasterQwen3TTS
 from numpy import ndarray
@@ -28,11 +29,19 @@ class QwenTTSService(TTSService):
         self,
         content: str
     ) -> bytes:
-        audio_list, samplerate = await asyncio.to_thread(
+        audio_list, _ = await asyncio.to_thread(
             self.model.generate_voice_clone,
             text=content, language=language,
             ref_audio='audio/ref_audio.wav', ref_text=ref_text
         )
-        if type(audio_list[0]) is not ndarray:
+        if not isinstance(audio_list[0], ndarray):
             raise TypeError('audio_list[0] is not ndarray')
         return audio_list[0].tobytes()
+
+    async def generate_stream(self, content) -> AsyncGenerator[bytes, None]:
+        for audio_chunk, _, _ in await asyncio.to_thread(
+            self.model.generate_voice_clone_streaming,
+            text=content, language=language,
+            ref_audio='audio/ref_audio.wav', ref_text=ref_text
+        ):
+            yield audio_chunk.tobytes()

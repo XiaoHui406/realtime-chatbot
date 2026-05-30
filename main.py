@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
         base_url, \
         llm_model
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
 
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -219,9 +219,12 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
     try:
         while True:
             llm_content: str = await llm_content_queue.get()
-            response_audio_bytes = await tts_service.generate(llm_content)
-            # print('发送音频数据')
-            await websocket.send_bytes(response_audio_bytes)
+            try:
+                async for audio_chunk in tts_service.generate_stream(llm_content):
+                    await websocket.send_bytes(audio_chunk)
+            except NotImplementedError:
+                response_audio_bytes = await tts_service.generate(llm_content)
+                await websocket.send_bytes(response_audio_bytes)
     except asyncio.CancelledError:
         raise
 
