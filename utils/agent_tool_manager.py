@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, create_model
 from typing import Callable, Type, get_type_hints, Optional
 import inspect
 from openai.types.chat import (
-    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionFunctionToolParam,
     ChatCompletionToolMessageParam,
 )
@@ -131,7 +131,8 @@ class AgentToolManager:
                     f"3. 传入类名字符串且该类已定义。"
                 )
 
-            tool: AgentTool = AgentTool(func=func, InputClass=resolved_input_class)
+            tool: AgentTool = AgentTool(
+                func=func, InputClass=resolved_input_class)
             self.tool_map[tool_name] = tool
             self.tool_name_list.append(tool_name)
             return func
@@ -206,15 +207,15 @@ class AgentToolManager:
         return tools
 
     def call_tool(
-        self, tool_call: ChatCompletionMessageFunctionToolCall
+        self, tool_call: ChatCompletionMessageFunctionToolCallParam
     ) -> ChatCompletionToolMessageParam:
         """
         执行模型返回的工具调用：解析参数、实例化 Pydantic 模型、调用函数并封装为 tool 消息。
         """
         tool_call_id, tool_name, arguments = (
-            tool_call.id,
-            tool_call.function.name,
-            json.loads(tool_call.function.arguments),
+            tool_call["id"],
+            tool_call["function"]["name"],
+            json.loads(tool_call["function"]["arguments"]),
         )
 
         if tool_name not in self.tool_name_list:
@@ -256,16 +257,16 @@ class AgentToolManager:
         )
 
     async def acall_tool(
-        self, tool_call: ChatCompletionMessageFunctionToolCall
+        self, tool_call: ChatCompletionMessageFunctionToolCallParam
     ) -> ChatCompletionToolMessageParam:
         """
         异步执行工具调用：解析参数、实例化 Pydantic 模型、调用函数并封装为 tool 消息。
         支持异步函数和同步函数。同步函数会在线程池中执行以避免阻塞事件循环。
         """
         tool_call_id, tool_name, arguments = (
-            tool_call.id,
-            tool_call.function.name,
-            json.loads(tool_call.function.arguments),
+            tool_call["id"],
+            tool_call["function"]["name"],
+            json.loads(tool_call["function"]["arguments"]),
         )
 
         if tool_name not in self.tool_name_list:
@@ -369,7 +370,8 @@ def load_tools(package_name: str):
                     importlib.import_module(module_name)
                     logging.info(f"[OK] Loaded module: {module_name}")
                 except Exception as e:
-                    logging.error(f"[FAIL] Failed to load module '{module_name}': {e}")
+                    logging.error(
+                        f"[FAIL] Failed to load module '{module_name}': {e}")
 
 
 def merge_managers(tool_managers: list[AgentToolManager]) -> AgentToolManager:

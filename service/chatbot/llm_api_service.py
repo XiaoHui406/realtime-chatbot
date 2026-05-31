@@ -1,3 +1,4 @@
+import json
 from typing import Any, AsyncGenerator, Dict, List
 
 from dotenv import load_dotenv
@@ -12,11 +13,11 @@ from openai.types.chat import ChatCompletionMessageParam, \
     ChatCompletionAssistantMessageParam, \
     ChatCompletionToolMessageParam, \
     ChatCompletionFunctionToolParam, \
-    ChatCompletionMessageFunctionToolCall
-from openai.types.chat.chat_completion_message_function_tool_call import Function
+    ChatCompletionMessageFunctionToolCallParam
+from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 
 from service.chatbot.interface.chatbot_service import ChatbotService
-from utils.agent_tool_manager import AgentToolManager
+from utils.tool_manager_registry import tool_manager
 
 
 class LLMAPIService(ChatbotService):
@@ -30,16 +31,13 @@ class LLMAPIService(ChatbotService):
         self.llm_model = os.getenv("MODEL")
         assert self.api_key and self.base_url and self.llm_model
 
-        self.tool_manager = AgentToolManager()
-
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=self.api_key
         )
         self.messages: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(
-                role='system',
-                content='这是一款ai语音聊天应用，用户的输入来自实时asr。回复保证只有一段话且使用纯文本，禁止使用markdown格式回复'),
+                role='system', content='这是一款ai语音聊天应用，用户的输入来自实时asr。回复保证只有一段话且使用纯文本不包含表情，禁止使用markdown格式回复')
         ]
 
         if initial_prompt:
@@ -68,7 +66,7 @@ class LLMAPIService(ChatbotService):
                 model=self.llm_model,
                 messages=self.messages,
                 stream=True,
-                tools=self.tool_manager.generate_tools(),
+                tools=tool_manager.generate_tools(),
                 extra_body={
                     "thinking": {
                         "type": "disabled"
@@ -78,7 +76,7 @@ class LLMAPIService(ChatbotService):
 
             response_content_list: List[str] = []
             tool_call_map: Dict[int,
-                                ChatCompletionMessageFunctionToolCall] = {}
+                                ChatCompletionMessageFunctionToolCallParam] = {}
             tool_call_args_map: Dict[int, List[str]] = {}
             async for chunk in response_stream:
                 choice = chunk.choices[0]
@@ -93,7 +91,7 @@ class LLMAPIService(ChatbotService):
                     for tool_call in delta.tool_calls:
                         if tool_call.function:
                             if tool_call.id and tool_call.function.name:
-                                tool_call_map[tool_call.index] = ChatCompletionMessageFunctionToolCall(
+                                tool_call_map[tool_call.index] = ChatCompletionMessageFunctionToolCallParam(
                                     id=tool_call.id,
                                     type='function',
                                     function=Function(
@@ -102,14 +100,22 @@ class LLMAPIService(ChatbotService):
                                     )
                                 )
                             elif tool_call.function.arguments:
+                                print(f'{tool_call.function.arguments=}')
                                 tool_call_args_map.setdefault(tool_call.index, []).append(
                                     tool_call.function.arguments
                                 )
                 elif not delta.tool_calls and choice.finish_reason == 'tool_calls':
                     for (index, tool_call) in tool_call_map.items():
-                        tool_call.function.arguments = ''.join(
+                        tool_call['function']['arguments'] = ''.join(
                             tool_call_args_map[index])
-                        tool_callback = await self.tool_manager.acall_tool(tool_call=tool_call_map[index])
+                        self.messages.append(ChatCompletionAssistantMessageParam(
+                            role='assistant',
+                            content=None,
+                            tool_calls=list(tool_call_map.values())
+                        ))
+
+                    for (index, tool_call) in tool_call_map.items():
+                        tool_callback = await tool_manager.acall_tool(tool_call=tool_call_map[index])
                         self.messages.append(tool_callback)
 
                 elif choice.finish_reason == 'stop':
@@ -121,3 +127,20 @@ class LLMAPIService(ChatbotService):
                     return
                 else:
                     continue
+
+    @staticmethod
+    def _get_tools_summary() -> str:
+        tools = tool_manager.generate_tools()
+        tool_summary_list: List[Dict] = []
+        for tool in tools:
+            tool_name = tool['function']['name']
+            if 'description' not in tool['function']:
+                raise ValueError(f'description is not in tool: {tool_name}')
+            tool_description = tool['function']['description']
+            tool_summary = {
+                'name': tool_name,
+                'description': tool_description
+            }
+            tool_summary_list.append(tool_summary)
+        tools_summary = f'tool summary list: {json.dumps(tool_summary_list, ensure_ascii=False)}'
+        return tools_summary
