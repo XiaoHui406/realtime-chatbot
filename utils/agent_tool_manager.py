@@ -54,7 +54,7 @@ class AgentTool(BaseModel):
         description = (
             self.func.__doc__.strip()
             if self.func.__doc__
-            else f"调用函数{self.func.__name__}"
+            else f"{self.func.__name__} tool"
         )
         parameters = self.InputClass.model_json_schema()
 
