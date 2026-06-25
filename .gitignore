@@ -13,3 +13,6 @@ wheels/
 
 audio/
 test.py
+
+
+.vscode/
