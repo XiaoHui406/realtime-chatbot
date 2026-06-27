@@ -6,13 +6,10 @@ from dotenv import load_dotenv
 import os
 
 from openai import AsyncOpenAI
-from openai.types.shared_params import FunctionDefinition, FunctionParameters
 from openai.types.chat import ChatCompletionMessageParam, \
     ChatCompletionSystemMessageParam, \
     ChatCompletionUserMessageParam, \
     ChatCompletionAssistantMessageParam, \
-    ChatCompletionToolMessageParam, \
-    ChatCompletionFunctionToolParam, \
     ChatCompletionMessageFunctionToolCallParam
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 
@@ -46,9 +43,6 @@ class LLMAPIService(ChatbotService):
                     role='system', content=initial_prompt
                 )
             )
-
-        # call_no_reply初始为false，在大模型调用no_reply后变为true
-        # self.call_no_reply: bool = False
 
     async def chat(self, message: str) -> AsyncGenerator[str, None]:
         if not self.llm_model:
@@ -124,23 +118,7 @@ class LLMAPIService(ChatbotService):
                         self.messages.append(ChatCompletionAssistantMessageParam(
                             role="assistant", content=response_content
                         ))
+                    print(f'{self.messages=}')
                     return
                 else:
                     continue
-
-    @staticmethod
-    def _get_tools_summary() -> str:
-        tools = tool_manager.generate_tools()
-        tool_summary_list: List[Dict] = []
-        for tool in tools:
-            tool_name = tool['function']['name']
-            if 'description' not in tool['function']:
-                raise ValueError(f'description is not in tool: {tool_name}')
-            tool_description = tool['function']['description']
-            tool_summary = {
-                'name': tool_name,
-                'description': tool_description
-            }
-            tool_summary_list.append(tool_summary)
-        tools_summary = f'tool summary list: {json.dumps(tool_summary_list, ensure_ascii=False)}'
-        return tools_summary
