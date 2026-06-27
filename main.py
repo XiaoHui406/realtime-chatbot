@@ -1,14 +1,21 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+import uuid
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, UploadFile, WebSocket
 import numpy as np
-from silero_vad import load_silero_vad, VADIterator
+from silero_vad import load_silero_vad, VADIterator, get_speech_timestamps
+from sqlalchemy import select
 import torch
 from typing import Dict, List
 import uvicorn
+import os
+import soundfile as sf
 
+from database_engine import create_database_and_table, get_database
+from model.reference_audio import ReferenceAudio, ReferenceAudioResponse
+from utils.audio_utils import preprocess_audio_to_waveform
 from service.asr.sensevoice_service import SenseVoiceService
 from service.asr.whisper_service import WhisperService
 from service.asr.interface.asr_service import ASRService
@@ -29,10 +36,7 @@ MAX_SEGMENT_GAP: float = 0.5  # 片段最大间隔(s)，如果两个片段的间
 asr_service: ASRService | None = None
 tts_service: TTSService | None = None
 vad_model = None
-device = None
-api_key: str | None = None
-base_url: str | None = None
-llm_model: str | None = None
+device = torch.device('cuda')
 
 
 @asynccontextmanager
@@ -40,13 +44,7 @@ async def lifespan(app: FastAPI):
     global \
         asr_service, \
         tts_service, \
-        vad_model, \
-        device, \
-        api_key, \
-        base_url, \
-        llm_model
-
-    device = torch.device("cuda")
+        vad_model
 
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -59,6 +57,8 @@ async def lifespan(app: FastAPI):
         )
 
     vad_model = vad_model.to(device)  # type: ignore
+
+    await create_database_and_table()
 
     yield
 
@@ -227,6 +227,93 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
                 await websocket.send_bytes(response_audio_bytes)
     except asyncio.CancelledError:
         raise
+
+
+@app.post('/upload_reference_audio', response_model=str)
+async def upload_reference_audio(audio: UploadFile, name: str, tags: str):
+    # 定义文件名称和路径
+    filename = f'{uuid.uuid4()}.wav'
+    file_path = f'./audio/{filename}'
+    # 音频数据存储
+    buffer = np.array([], dtype=np.float32)
+
+    if not asr_service:
+        raise ValueError("asr service is none")
+
+    try:
+        # 读取音频数据
+        audio_bytes = await audio.read()
+        waveform = await preprocess_audio_to_waveform(audio_bytes, filename_hint=audio.filename or '')
+
+        # 获取vad识别出的时间戳，取前3块
+        timestamps = get_speech_timestamps(
+            audio=torch.as_tensor(waveform, device=device), model=vad_model)[:3]
+        if len(timestamps) == 0:
+            raise ValueError('No human voice was detected in this audio')
+        # 根据时间戳提取音频数据到buffer
+        for timestamp in timestamps:
+            buffer = np.concatenate(
+                (buffer, waveform[timestamp['start']: timestamp['end']]))
+        # 将buffer保存为文件，方便之后使用
+        sf.write(file=file_path, data=buffer, samplerate=16000)
+        # 使用asr识别文本
+        transcribe_text = await asr_service.transcribe(buffer)
+        # 信息保存到数据库
+        reference_audio = ReferenceAudio(
+            name=name, file_path=file_path, transcribe_text=transcribe_text, tags=tags)
+        async with get_database() as database:
+            database.add(reference_audio)
+            await database.commit()
+        return 'audio has been successfully uploaded'
+
+    except Exception:
+        try:
+            await asyncio.to_thread(os.remove, file_path)
+        except OSError:
+            pass
+        raise
+
+
+@app.get('/get_reference_audios', response_model=List[ReferenceAudioResponse])
+async def get_reference_audios() -> List[ReferenceAudioResponse]:
+    reference_audio_list: List[ReferenceAudioResponse] = []
+    async with get_database() as database:
+        result = await database.execute(select(ReferenceAudio))
+        reference_audios = result.scalars().all()
+    for audio in reference_audios:
+        reference_audio_list.append(
+            ReferenceAudioResponse(
+                id=audio.id, name=audio.name, tags=audio.tags
+            )
+        )
+    return reference_audio_list
+
+
+@app.get('/set_reference_audio', response_model=str)
+async def set_reference_audio(audio_id: int):
+    if not tts_service:
+        raise ValueError('tts service is none')
+    await tts_service.set_reference_audio(audio_id=audio_id)
+    return 'audio has been successfully set'
+
+
+@app.get('/delete_reference_audio', response_model=str)
+async def delete_reference_audio(audio_id: int):
+    async with get_database() as database:
+        result = await database.execute(select(ReferenceAudio).filter(
+            ReferenceAudio.id == audio_id
+        ))
+        audio = result.scalars().one_or_none()
+        if not audio:
+            raise ValueError(f'reference_audio.id: {audio_id} is not exist')
+
+        try:
+            await asyncio.to_thread(os.remove, audio.file_path)
+        except OSError:
+            pass
+        await database.delete(audio)
+        await database.commit()
+    return 'audio has been successfully deleted'
 
 
 if __name__ == "__main__":

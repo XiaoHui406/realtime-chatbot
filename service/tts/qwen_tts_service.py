@@ -4,7 +4,10 @@ from typing import AsyncGenerator
 
 from faster_qwen3_tts import FasterQwen3TTS
 from numpy import ndarray
+from sqlalchemy import select
 
+from database_engine import get_database
+from model.reference_audio import ReferenceAudio
 from service.tts.interface.tts_service import TTSService
 
 
@@ -65,3 +68,13 @@ class QwenTTSService(TTSService):
             elif isinstance(chunk_bytes, Exception):
                 raise chunk_bytes
             yield chunk_bytes
+
+    async def set_reference_audio(self, audio_id: int) -> None:
+        async with get_database() as database:
+            result = await database.execute(select(ReferenceAudio).filter(ReferenceAudio.id == audio_id))
+            audio = result.scalars().one_or_none()
+        if not audio:
+            raise ValueError(f'reference_audio.id: {audio_id} is not exist')
+        self.ref_audio, self.ref_text = audio.file_path, audio.transcribe_text
+        # 执行一次空推理
+        await self.generate('你好')
