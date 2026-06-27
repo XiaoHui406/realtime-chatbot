@@ -17,6 +17,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.50",
     "torch>=2.11.0",
     "torchaudio>=2.11.0",
+    "torchcodec>=0.14.0",
     "uvicorn>=0.42.0",
     "websockets>=16.0",
 ]
@@ -26,6 +27,9 @@ torch = [
   { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchaudio = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchcodec = [
   { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 

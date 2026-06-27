@@ -2188,6 +2188,8 @@ dependencies = [
     { name = "torch", version = "2.11.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
     { name = "torchaudio", version = "2.11.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torchcodec", version = "0.14.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torchcodec", version = "0.14.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -2208,6 +2210,8 @@ requires-dist = [
     { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.11.0", index = "https://download.pytorch.org/whl/cu126" },
     { name = "torchaudio", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.11.0" },
     { name = "torchaudio", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.11.0", index = "https://download.pytorch.org/whl/cu126" },
+    { name = "torchcodec", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.14.0" },
+    { name = "torchcodec", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.14.0", index = "https://download.pytorch.org/whl/cu126" },
     { name = "uvicorn", specifier = ">=0.42.0" },
     { name = "websockets", specifier = ">=16.0" },
 ]
@@ -2972,6 +2976,52 @@ wheels = [
     { url = "https://download-r2.pytorch.org/whl/cu126/torchaudio-2.11.0%2Bcu126-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:8aa73ae00e0e0bbf901015089141c25e4080216f56bb9b33367ac209890af7d3", upload-time = "2026-03-23T15:50:21Z" },
     { url = "https://download-r2.pytorch.org/whl/cu126/torchaudio-2.11.0%2Bcu126-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:7fb725b644927fff30b0b23cbd2de155016b759382efd7b02a33ec77372072f5", upload-time = "2026-03-23T15:50:21Z" },
     { url = "https://download-r2.pytorch.org/whl/cu126/torchaudio-2.11.0%2Bcu126-cp314-cp314t-win_amd64.whl", hash = "sha256:589a66aacbb183db71b64ed05c46f08b3ce3b15ceefd51e3935ffab16905ef11", upload-time = "2026-03-23T15:50:22Z" },
+]
+
+[[package]]
+name = "torchcodec"
+version = "0.14.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+]
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/36/72/b24c76e0090b930b0dfd3a0a40bf207485a0a9a92d1b9617318b5ec52279/torchcodec-0.14.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:849b55c16d3d9791f07c7ff5ef6168a94bbd981e2e9e581999c9a2a8a660c61c", size = 4586357, upload-time = "2026-06-03T12:41:36.222Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/aa/78/a54d8eb6cb1965dafabe68ca3c0d648132928d881b33f6993ffa1c1eaf52/torchcodec-0.14.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:7bf335289c475da3e12c4e2ef8295ee3530c4c4e95274c591def53a136cfdbdd", size = 4573338, upload-time = "2026-06-03T12:41:42.768Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/90/6f/51ac94fa337afe0aadc2330591e34af7dfadc49366d6ec00bbfec7cd9ddc/torchcodec-0.14.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:f11ec6d25ee47d03eed0763d92bfc884402f583cc71f5697d7fd519be39e7f90", size = 4675642, upload-time = "2026-06-03T12:41:52.483Z" },
+]
+
+[[package]]
+name = "torchcodec"
+version = "0.14.0+cu126"
+source = { registry = "https://download.pytorch.org/whl/cu126" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'linux'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'linux'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'linux'",
+]
+wheels = [
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:c4cbd459a35fd0a4ab6f8fde84a4efe331d540e9f41d197118cda67ce0cda2e2", upload-time = "2026-06-03T12:39:01Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:68fa08012359e9936cea3cd1fd9c157cec3602c334d526aa3f87afd404afaafd", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:468335d21f4119b75838cc4cf551b243b5867b48671178bfe07c112d7dacdf9f", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:590147f5703c378d485eb768a00d57d01115e2fb8c4184b8bda12b8d47bd16f4", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:f8b3ba1de7b2be397c0362cd2de1ec23ec67a68929a1c5390ecb4ea33cca8bf3", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp313-cp313-win_amd64.whl", hash = "sha256:aa0d367f3375c3ae9380a3e1975c2de7ed540a65477c34b0e8c8747a9a741eaa", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:813e1daaa9c4824e5503b04c7226f0095eb20d9fc6209bab77889496503ea243", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:3dddb978f6f27e72506af84be506e60ab7bc52706a147cc7987cda1fdd16a7d7", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:6e99959edabb5d7d1cfa24d3d3df49c3ec25642c8706e02c9a85a9e2bfca466a", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:a64cbb7b8d9a7c7367260525a844940003156689538b5edf02171c9ce631082b", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp314-cp314-win_amd64.whl", hash = "sha256:9067947beb98876d5caf1c78c81e387810bcd2c76c08deb15000fdb7e147b1bc", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:361f69a8c8be763392c5abaf88f42d5f98d3c49a8645656e740ccb784fc632ee", upload-time = "2026-06-03T12:39:02Z" },
+    { url = "https://download.pytorch.org/whl/cu126/torchcodec-0.14.0%2Bcu126-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:949809b5154170878446bdc9e827cfbabf2670e48742866d8d4acde67a80dfa0", upload-time = "2026-06-03T12:39:02Z" },
 ]
 
 [[package]]
