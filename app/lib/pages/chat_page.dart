@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../services/config.dart';
 import '../services/ws_service.dart';
 import '../services/audio_recorder.dart';
 import '../services/audio_player.dart';
 import '../services/wav_utils.dart';
+import 'reference_audio_page.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -63,7 +65,7 @@ class _ChatPageState extends State<ChatPage> {
 
     try {
       setState(() => _statusText = 'Connecting...');
-      await _wsService.connect('ws://127.0.0.1:8000/realtime-chat');
+      await _wsService.connect('${AppConfig.wsBaseUrl}/realtime-chat');
 
       await _recorderService.start();
 
@@ -153,6 +155,17 @@ class _ChatPageState extends State<ChatPage> {
       appBar: AppBar(
         title: const Text('AI Voice Chat'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.multitrack_audio),
+            tooltip: 'Reference Audio',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ReferenceAudioPage()),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
