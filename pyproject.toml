@@ -10,6 +10,7 @@ dependencies = [
     "faster-qwen3-tts>=0.2.4",
     "faster-whisper>=1.2.1",
     "funasr==1.3.9",
+    "mcp[cli]>=1.28.1",
     "openai>=2.29.0",
     "python-dotenv>=1.2.2",
     "silero-vad>=6.2.1",
