@@ -206,6 +206,9 @@ class AgentToolManager:
             tools.append(tool.to_tool())
         return tools
 
+    async def agenerate_tools(self) -> list[ChatCompletionFunctionToolParam]:
+        return await asyncio.to_thread(self.generate_tools)
+
     def call_tool(
         self, tool_call: ChatCompletionMessageFunctionToolCallParam
     ) -> ChatCompletionToolMessageParam:

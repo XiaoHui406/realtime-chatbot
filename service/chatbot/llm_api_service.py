@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, AsyncGenerator, Dict, List
 
@@ -14,7 +15,7 @@ from openai.types.chat import ChatCompletionMessageParam, \
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 
 from service.chatbot.interface.chatbot_service import ChatbotService
-from utils.tool_manager_registry import tool_manager
+from utils.tool_call import tool_manager_registry as tool_manager_reg
 
 
 class LLMAPIService(ChatbotService):
@@ -47,6 +48,8 @@ class LLMAPIService(ChatbotService):
     async def chat(self, message: str) -> AsyncGenerator[str, None]:
         if not self.llm_model:
             raise ValueError('llm model is not set')
+        if not tool_manager_reg.tool_manager:
+            raise RuntimeError('tool_manager is not initialized')
         print(f'{self.messages=}')
 
         user_message = ChatCompletionUserMessageParam(
@@ -60,7 +63,7 @@ class LLMAPIService(ChatbotService):
                 model=self.llm_model,
                 messages=self.messages,
                 stream=True,
-                tools=tool_manager.generate_tools(),
+                tools=await tool_manager_reg.tool_manager.agenerate_tools(),
                 extra_body={
                     "thinking": {
                         "type": "disabled"
@@ -108,9 +111,10 @@ class LLMAPIService(ChatbotService):
                             tool_calls=list(tool_call_map.values())
                         ))
 
-                    for (index, tool_call) in tool_call_map.items():
-                        tool_callback = await tool_manager.acall_tool(tool_call=tool_call_map[index])
-                        self.messages.append(tool_callback)
+                    tool_callbacks = await asyncio.gather(*(
+                        tool_manager_reg.tool_manager.acall_tool(tool_call=tool_call) for tool_call in tool_call_map.values()
+                    ))
+                    self.messages.extend(tool_callbacks)
 
                 elif choice.finish_reason == 'stop':
                     if response_content_list:

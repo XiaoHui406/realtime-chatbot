@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import httpx
 import os
 
-from utils.tool_manager_registry import tool_manager
+from utils.tool_call.tool_manager_registry import agent_tool_manager
 from pydantic import BaseModel, Field
 
 
@@ -19,7 +19,7 @@ if not zai_api_key:
     raise ValueError('zhipu apikey is None, web search tool is disabled')
 
 
-@tool_manager.agent_tool(InputClass=WebSearchParams)
+@agent_tool_manager.agent_tool(InputClass=WebSearchParams)
 async def web_search(web_search_params: WebSearchParams) -> List[Dict]:
     """
     输入搜索内容和搜索数量，返回联网搜索结果
