@@ -1,0 +1,12 @@
+{
+    "mcp": {
+        "remote-mcp": {
+            "type": "remote",
+            "url": "https://your.mcp.server"
+        },
+        "local-mcp": {
+            "type": "local",
+            "command": ["npx", "-y"]
+        }
+    }
+}
