@@ -23,6 +23,7 @@ from service.chatbot.interface.chatbot_service import ChatbotService
 from service.chatbot.llm_api_service import LLMAPIService
 from service.tts.interface.tts_service import TTSService
 from service.tts.qwen_tts_service import QwenTTSService
+from utils.tool_call.tool_manager_registry import init_tool_manager
 
 
 SAMPLE_RATE: int = 16000
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI):
     vad_model = vad_model.to(device)  # type: ignore
 
     await create_database_and_table()
+    await init_tool_manager()
 
     yield
 
