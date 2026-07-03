@@ -5,13 +5,13 @@
 ## Architecture / 架构
 
 ```
-┌──────────────────┐     WebSocket    ┌─────────────────────────────────────┐
-│   Flutter App    │ ◄──────────────► │         Python Backend              │
-│  (Microphone)    │   audio bytes    │                                     │
-│  (Speaker)       │   ←→ PCM audio   │  VAD (Silero) → ASR  (SenseVoice)   │
-│                  │                  │       → LLM (OpenAI API)            │
-│                  │                  │       → TTS (Qwen3-TTS + cloning)   │
-└──────────────────┘                  └─────────────────────────────────────┘
+┌──────────────────┐     WebSocket    ┌──────────────────────────────────────────────┐
+│   Flutter App    │ ◄──────────────► │              Python Backend                  │
+│  (Microphone)    │   audio bytes    │                                              │
+│  (Speaker)       │   ←→ PCM audio   │  VAD (Silero) → ASR  (SenseVoice)            │
+│                  │                  │       → LLM (OpenAI API) ←→ MCP Servers      │
+│                  │                  │       → TTS (Qwen3-TTS + cloning)            │
+└──────────────────┘                  └──────────────────────────────────────────────┘
 ```
 
 ### Pipeline / 处理流程
@@ -25,15 +25,16 @@
 
 ## Tech Stack / 技术栈
 
-| 模块     | 技术                                      |
-| -------- | ----------------------------------------- |
-| 后端框架 | FastAPI + Uvicorn                         |
-| VAD      | Silero VAD                                |
-| ASR      | FunASR (SenseVoiceSmall) / Faster-Whisper |
-| LLM      | OpenAI-compatible API                     |
-| TTS      | Qwen3-TTS 12Hz 0.6B                       |
-| 客户端   | Flutter                                   |
-| 包管理   | uv (Python), pub (Flutter)                |
+| 模块     | 技术                                            |
+| -------- | ----------------------------------------------- |
+| 后端框架 | FastAPI + Uvicorn                               |
+| VAD      | Silero VAD                                      |
+| ASR      | FunASR (SenseVoiceSmall) / Faster-Whisper       |
+| LLM      | OpenAI-compatible API                           |
+| TTS      | Qwen3-TTS 12Hz 0.6B                             |
+| 工具调用 | Function Calling + MCP (Model Context Protocol) |
+| 客户端   | Flutter                                         |
+| 包管理   | uv (Python), pub (Flutter)                      |
 
 ## Prerequisites / 环境要求
 
@@ -143,25 +144,104 @@ curl "http://127.0.0.1:8000/set_reference_audio?audio_id=1"
 curl "http://127.0.0.1:8000/delete_reference_audio?audio_id=1"
 ```
 
-## Function Calling / 工具调用
+## Function Calling & MCP / 工具调用与 MCP 集成
 
-LLM 支持通过 Function Calling 调用外部工具（如联网搜索、天气查询等），工具会自动注册并生成 OpenAI 兼容的 JSON Schema。
+LLM 支持通过 Function Calling 调用外部工具，工具来源分为两类：**本地工具**（Python 函数通过装饰器注册）和 **MCP 工具**（通过 Model Context Protocol 连接外部 MCP 服务器）。
 
-### 工具注册机制
+所有工具管理器实现 `ToolManager` 协议（`utils/tool_call/interface/tool_manager.py`），`ToolManagerProxy` 在启动时汇总所有管理器的工具列表并统一分派调用。
 
-所有工具模块放置在 `utils/tools/` 目录下，服务启动时 `tool_manager_registry.py` 会自动扫描并加载。编写新工具只需两步：
+### MCP 服务器配置
 
-1. 在 `utils/tools/` 下新建一个 `.py` 文件
-2. 使用 `@tool_manager.agent_tool()` 装饰器注册函数
+MCP 服务器通过 `config.json` 配置，支持**本地服务器**和**远程服务器**两种类型。
+
+#### 配置结构
+
+```json
+{
+    "mcp": {
+        "<server-name>": {
+            "type": "local",
+            "command": ["npx", "-y", "@scope/mcp-server@latest"]
+        },
+        "<server-name>": {
+            "type": "remote",
+            "url": "https://your.mcp.server"
+        }
+    }
+}
+```
+
+每个 MCP 服务器的 key 为自定义名称，其工具在 LLM 中会以 `<server-name>_<tool-name>` 格式命名，避免冲突。
+
+#### 本地服务器 (type: local)
+
+适用于 npm 包、Python 脚本等本地进程，服务启动时自动拉起子进程并通过标准输入/输出通信。
+
+```json
+{
+    "mcp": {
+        "local-server": {
+            "type": "local",
+            "command": ["npx", "-y", "@scope/mcp-server@latest"],
+            "enabled": true,
+            "timeout": 5000,
+            "environment": { "API_KEY": "xxx" }
+        }
+    }
+}
+```
+
+| 字段          | 类型         | 说明                             |
+| ------------- | ------------ | -------------------------------- |
+| `type`        | `"local"`    | 固定值                           |
+| `command`     | `list[str]`  | 启动命令，第一个元素为可执行文件 |
+| `enabled`     | `bool`       | 是否启用，默认 `true`            |
+| `timeout`     | `int`        | 超时时间（毫秒），默认 `5000`    |
+| `environment` | `dict`       | 子进程环境变量，可选             |
+
+#### 远程服务器 (type: remote)
+
+适用于远程 HTTP MCP 服务，支持 **Streamable HTTP** 和 **SSE** 两种传输协议，连接失败会自动回退。
+
+```json
+{
+    "mcp": {
+        "remote-server": {
+            "type": "remote",
+            "url": "https://mcp.example.com",
+            "enabled": true,
+            "timeout": 5000,
+            "headers": { "Authorization": "Bearer xxx" }
+        }
+    }
+}
+```
+
+| 字段      | 类型        | 说明                                            |
+| --------- | ----------- | ----------------------------------------------- |
+| `type`    | `"remote"`  | 固定值                                          |
+| `url`     | `str`       | 远程 MCP 服务 URL                               |
+| `enabled` | `bool`      | 是否启用，默认 `true`                           |
+| `timeout` | `int`       | 超时时间（毫秒），默认 `5000`                   |
+| `headers` | `dict`      | 自定义 HTTP 请求头，可选                        |
+
+> 参考 `config.example.json` 创建 `config.json`，该文件已被 `.gitignore` 忽略。
+
+### 本地工具注册
+
+所有本地工具模块放置在 `utils/tool_call/tools/` 目录下，服务启动时 `tool_manager_registry.py` 会自动扫描并加载。编写新工具只需两步：
+
+1. 在 `utils/tool_call/tools/` 下新建一个 `.py` 文件
+2. 使用 `@agent_tool_manager.agent_tool()` 装饰器注册函数
 
 ### 编写工具的两种方式
 
 **方式一：自动生成参数模型（推荐）** — 装饰器不带参数，根据函数类型注解自动生成 Pydantic 模型：
 
 ```python
-from utils.tool_manager_registry import tool_manager
+from utils.tool_call.tool_manager_registry import agent_tool_manager
 
-@tool_manager.agent_tool()
+@agent_tool_manager.agent_tool()
 async def weather_search(city: str):
     """输入城市名称，返回城市天气信息"""
     # 你的工具逻辑
@@ -172,13 +252,13 @@ async def weather_search(city: str):
 
 ```python
 from pydantic import BaseModel, Field
-from utils.tool_manager_registry import tool_manager
+from utils.tool_call.tool_manager_registry import agent_tool_manager
 
 class WebSearchParams(BaseModel):
     content: str = Field(description='搜索内容')
     search_count: int = Field(description='搜索数量', default=5)
 
-@tool_manager.agent_tool(InputClass=WebSearchParams)
+@agent_tool_manager.agent_tool(InputClass=WebSearchParams)
 async def web_search(web_search_params: WebSearchParams):
     """输入搜索内容和搜索数量，返回联网搜索结果"""
     ...
@@ -192,10 +272,10 @@ async def web_search(web_search_params: WebSearchParams):
 
 ### 内置示例工具
 
-| 工具             | 文件                            | 功能         | 依赖                             |
-| ---------------- | ------------------------------- | ------------ | -------------------------------- |
-| `web_search`     | `utils/tools/web_search.py`     | 智谱联网搜索 | 需在 `.env` 中配置 `ZAI_API_KEY` |
-| `weather_search` | `utils/tools/weather_search.py` | 城市天气查询 | 无                               |
+| 工具             | 文件                                      | 功能         | 依赖                             |
+| ---------------- | ----------------------------------------- | ------------ | -------------------------------- |
+| `web_search`     | `utils/tool_call/tools/web_search.py`     | 智谱联网搜索 | 需在 `.env` 中配置 `ZAI_API_KEY` |
+| `weather_search` | `utils/tool_call/tools/weather_search.py` | 城市天气查询 | 无                               |
 
 ## Quick Start / 快速开始
 
@@ -244,9 +324,10 @@ flutter run
 
 ```
 realtime-chatbot/
-├── main.py                     # 后端入口，WebSocket 服务 & REST API
-├── pyproject.toml              # Python 项目配置
-├── .env                        # API 密钥配置
+├── main.py                        # 后端入口，WebSocket 服务 & REST API & FastAPI lifespan
+├── config.example.json            # MCP 配置模板
+├── pyproject.toml                 # Python 项目配置
+├── .env                           # API 密钥配置
 ├── service/
 │   ├── asr/
 │   │   ├── interface/asr_service.py      # ASR 抽象接口
@@ -254,20 +335,27 @@ realtime-chatbot/
 │   │   └── whisper_service.py            # Whisper 实现
 │   ├── chatbot/
 │   │   ├── interface/chatbot_service.py  # Chatbot 抽象接口
-│   │   └── llm_api_service.py            # LLM API 实现
+│   │   └── llm_api_service.py            # LLM API 实现（含 Function Calling）
 │   └── tts/
 │       ├── interface/tts_service.py      # TTS 抽象接口
 │       └── qwen_tts_service.py           # Qwen3-TTS 实现
 ├── model/
-│   ├── reference_audio.py      # 参考音频 数据库模型 & API 响应模型
-│   └── timestamp.py            # 时间戳模型
+│   ├── reference_audio.py         # 参考音频 数据库模型 & API 响应模型
+│   └── mcp_model.py               # MCP 服务器配置模型
 ├── utils/
-│   ├── audio_utils.py          # 音频预处理 (格式转换/重采样/单声道)
-│   ├── agent_tool_manager.py   # Function Calling 工具管理器
-│   └── tools/
-│       ├── web_search.py       # 联网搜索工具
-│       └── weather_search.py   # 天气查询工具
-├── app/                        # Flutter 客户端
+│   ├── audio_utils.py             # 音频预处理 (格式转换/重采样/单声道)
+│   └── tool_call/                 # 工具调用模块
+│       ├── interface/
+│       │   └── tool_manager.py    # ToolManager 协议
+│       ├── agent_tool_manager.py  # 本地工具管理器
+│       ├── mcp_tool_manager.py    # MCP 工具管理器
+│       ├── tool_manager_proxy.py  # 工具管理器代理（汇总+MCP工具分派）
+│       ├── tool_manager_registry.py # 工具管理器注册与初始化
+│       └── tools/
+│           ├── web_search.py      # 联网搜索工具
+│           ├── weather_search.py  # 天气查询工具
+│           └── get_location.py    # 位置获取工具
+├── app/                           # Flutter 客户端
 │   ├── lib/
 │   │   ├── main.dart
 │   │   ├── pages/chat_page.dart
@@ -276,19 +364,20 @@ realtime-chatbot/
 │   │       ├── audio_recorder.dart
 │   │       └── audio_player.dart
 │   └── pubspec.yaml
-├── audio/                      # 参考音频存储目录
-├── database_engine.py           # 数据库引擎配置
-└── LICENSE                      # MIT License
+├── audio/                         # 参考音频存储目录
+├── database_engine.py             # 数据库引擎配置
+└── LICENSE                         # MIT License
 ```
 
 ## Configuration / 配置说明
 
-| 配置项       | 文件      | 说明                                 |
-| ------------ | --------- | ------------------------------------ |
-| LLM API Key  | `.env`    | DeepSeek 或其他 OpenAI 兼容 API 密钥 |
-| LLM Model    | `.env`    | 模型名称，默认 `deepseek-v4-flash`   |
-| 采样率       | `main.py` | 默认 16000 Hz，上传音频自动重采样    |
-| VAD 合并间隔 | `main.py` | `MAX_SEGMENT_GAP` 默认 0.5s          |
+| 配置项       | 文件          | 说明                                             |
+| ------------ | ------------- | ------------------------------------------------ |
+| LLM API Key  | `.env`        | DeepSeek 或其他 OpenAI 兼容 API 密钥             |
+| LLM Model    | `.env`        | 模型名称，默认 `deepseek-v4-flash`               |
+| MCP 服务器   | `config.json` | MCP 服务器连接配置（参考 `config.example.json`） |
+| 采样率       | `main.py`     | 默认 16000 Hz，上传音频自动重采样                |
+| VAD 合并间隔 | `main.py`     | `MAX_SEGMENT_GAP` 默认 0.5s                      |
 
 ## License
 
