@@ -77,4 +77,8 @@ class QwenTTSService(TTSService):
             raise ValueError(f'reference_audio.id: {audio_id} is not exist')
         self.ref_audio, self.ref_text = audio.file_path, audio.transcribe_text
         # 执行一次空推理
-        await self.generate('你好')
+        try:
+            async for _ in self.generate_stream('你好'):
+                pass
+        except NotImplementedError:
+            await self.generate('你好')
