@@ -98,6 +98,75 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     }
   }
 
+  Future<void> _editAudio(ReferenceAudioInfo audio) async {
+    final nameController = TextEditingController(text: audio.name);
+    final tagsController = TextEditingController(text: audio.tags);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Reference Audio'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: tagsController,
+              decoration: const InputDecoration(labelText: 'Tags'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameController.text.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('Name cannot be empty'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.of(ctx).pop(true);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != true) return;
+
+    try {
+      await _apiService.editReferenceAudio(
+        audio.id,
+        nameController.text,
+        tagsController.text,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio updated successfully')),
+        );
+        _loadAudios();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Edit failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _uploadAudio() async {
     final nameController = TextEditingController();
     final tagsController = TextEditingController();
@@ -237,6 +306,11 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    onPressed: () => _editAudio(audio),
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit',
+                  ),
                   FilledButton.tonalIcon(
                     onPressed: () => _setAudio(audio.id),
                     icon: const Icon(Icons.check, size: 18),

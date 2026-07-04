@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/config.dart';
 import '../services/ws_service.dart';
 import '../services/audio_recorder.dart';
@@ -108,21 +109,85 @@ class _ChatPageState extends State<ChatPage> {
     if (message is String) {
       try {
         final json = jsonDecode(message);
-        final msg = json['msg'] ?? message;
-        setState(() {
-          _messages.add(_ChatMessage(text: msg.toString(), isUser: false));
-        });
-      } catch (_) {
-        setState(() {
-          _messages.add(_ChatMessage(text: message, isUser: false));
-        });
-      }
+        if (json is Map<String, dynamic>) {
+          if (json['type'] == 'request' && json['action'] == 'get_location') {
+            _handleLocationRequest(json['request_id'] as String);
+            return;
+          }
+          final msg = json['msg'] ?? message;
+          setState(() {
+            _messages.add(_ChatMessage(text: msg.toString(), isUser: false));
+          });
+          return;
+        }
+      } catch (_) {}
+      setState(() {
+        _messages.add(_ChatMessage(text: message, isUser: false));
+      });
     } else if (message is List<int>) {
       final float32List = bytesToFloat32List(message);
       _playerService.playFloat32Pcm(float32List, 24000);
       setState(() {
         _messages.add(_ChatMessage(text: '[AI voice response]', isUser: false));
       });
+    }
+  }
+
+  Future<void> _handleLocationRequest(String requestId) async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _wsService.sendText(jsonEncode({
+          'type': 'response',
+          'request_id': requestId,
+          'result': {'error': 'Location service is disabled'},
+        }));
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _wsService.sendText(jsonEncode({
+            'type': 'response',
+            'request_id': requestId,
+            'result': {'error': 'Location permission denied'},
+          }));
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _wsService.sendText(jsonEncode({
+          'type': 'response',
+          'request_id': requestId,
+          'result': {'error': 'Location permission permanently denied'},
+        }));
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+
+      _wsService.sendText(jsonEncode({
+        'type': 'response',
+        'request_id': requestId,
+        'result': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracy': position.accuracy,
+        },
+      }));
+    } catch (e) {
+      _wsService.sendText(jsonEncode({
+        'type': 'response',
+        'request_id': requestId,
+        'result': {'error': e.toString()},
+      }));
     }
   }
 

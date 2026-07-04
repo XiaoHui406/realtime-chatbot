@@ -29,7 +29,7 @@ class ApiService {
   ApiService({this.baseUrl = AppConfig.httpBaseUrl});
 
   Future<List<ReferenceAudioInfo>> getReferenceAudios() async {
-    final response = await http.get(Uri.parse('$baseUrl/get_reference_audios'));
+    final response = await http.get(Uri.parse('$baseUrl/reference_audio'));
     if (response.statusCode != 200) {
       throw Exception('Failed to load reference audios: ${response.statusCode}');
     }
@@ -45,7 +45,7 @@ class ApiService {
     required String name,
     required String tags,
   }) async {
-    final uri = Uri.parse('$baseUrl/upload_reference_audio')
+    final uri = Uri.parse('$baseUrl/reference_audio')
         .replace(queryParameters: {'name': name, 'tags': tags});
     final request = http.MultipartRequest('POST', uri);
     request.files.add(await http.MultipartFile.fromPath('audio', filePath, filename: fileName));
@@ -58,19 +58,27 @@ class ApiService {
   }
 
   Future<String> setReferenceAudio(int audioId) async {
-    final uri = Uri.parse('$baseUrl/set_reference_audio')
-        .replace(queryParameters: {'audio_id': audioId.toString()});
-    final response = await http.get(uri);
+    final uri = Uri.parse('$baseUrl/reference_audio/$audioId/activate');
+    final response = await http.put(uri);
     if (response.statusCode != 200) {
       throw Exception('Failed to set reference audio: ${response.statusCode}');
     }
     return response.body;
   }
 
+  Future<String> editReferenceAudio(int audioId, String name, String tags) async {
+    final uri = Uri.parse('$baseUrl/reference_audio/$audioId')
+        .replace(queryParameters: {'name': name, 'tags': tags});
+    final response = await http.put(uri);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to edit reference audio: ${response.statusCode}');
+    }
+    return response.body;
+  }
+
   Future<String> deleteReferenceAudio(int audioId) async {
-    final uri = Uri.parse('$baseUrl/delete_reference_audio')
-        .replace(queryParameters: {'audio_id': audioId.toString()});
-    final response = await http.get(uri);
+    final uri = Uri.parse('$baseUrl/reference_audio/$audioId');
+    final response = await http.delete(uri);
     if (response.statusCode != 200) {
       throw Exception('Failed to delete reference audio: ${response.statusCode}');
     }
