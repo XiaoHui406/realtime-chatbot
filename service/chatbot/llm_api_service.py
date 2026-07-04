@@ -13,6 +13,7 @@ from openai.types.chat import ChatCompletionMessageParam, \
     ChatCompletionAssistantMessageParam, \
     ChatCompletionMessageFunctionToolCallParam
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
+from openai.types.chat.chat_completion_content_part_param import ChatCompletionContentPartParam
 
 from service.chatbot.interface.chatbot_service import ChatbotService
 from utils.tool_call import tool_manager_registry as tool_manager_reg
@@ -45,7 +46,7 @@ class LLMAPIService(ChatbotService):
                 )
             )
 
-    async def chat(self, message: str) -> AsyncGenerator[str, None]:
+    async def chat(self, message: List[ChatCompletionContentPartParam]) -> AsyncGenerator[str, None]:
         if not self.llm_model:
             raise ValueError('llm model is not set')
         if not tool_manager_reg.tool_manager:
