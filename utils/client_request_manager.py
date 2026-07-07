@@ -29,7 +29,7 @@ class ClientRequestManager:
         self,
         action: str,
         data: Optional[Dict[str, Any]] = None,
-        timeout: float = 10.0,
+        timeout: float = 30.0,
     ) -> Dict[str, Any]:
         if not self._websocket:
             raise ClientNotConnectedError('WebSocket is not connected')
