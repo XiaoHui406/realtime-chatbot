@@ -1,9 +1,16 @@
 from contextlib import asynccontextmanager
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
-from sqlalchemy.orm import MappedAsDataclass
 from sqlalchemy.orm.decl_api import DeclarativeBase
 
 engine = create_async_engine('sqlite+aiosqlite:///./database.db')
+
+
+@event.listens_for(engine.sync_engine, 'connect')
+def enable_sqlite_fk(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute('PRAGMA foreign_keys = ON')
+    cursor.close()
 
 
 class Base(AsyncAttrs, DeclarativeBase):
