@@ -11,6 +11,7 @@ import uvicorn
 from openai.types.chat.chat_completion_content_part_text_param import ChatCompletionContentPartTextParam
 
 from database_engine import create_database_and_table
+from router.chatbot_session_router import chatbot_session_router
 from router.reference_audio_router import reference_audio_router
 from service.chatbot.interface.chatbot_service import ChatbotService
 from service.chatbot.llm_api_service import LLMAPIService
@@ -44,12 +45,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(reference_audio_router)
+app.include_router(chatbot_session_router)
 
 
 @app.websocket("/realtime-chat")
-async def realtime_chat(websocket: WebSocket):
+async def realtime_chat(websocket: WebSocket, session_id: int | None = None):
     await websocket.accept()
     await websocket.send_json({"msg": "welcome to connect"})
+    if session_id is not None:
+        await service_registry.chatbot_service.set_session(session_id)
     service_registry.client_request_manager.set_websocket(websocket)
     buffer = np.array([], dtype=np.float32)
     buffer_offset = 0  # 跟踪 buffer 的起始偏移量
