@@ -12,6 +12,11 @@ class WebSocketService {
     await _channel!.ready;
   }
 
+  Future<void> connectWithSession(String baseUrl, int sessionId) async {
+    final url = '$baseUrl?session_id=$sessionId';
+    await connect(url);
+  }
+
   void sendAudio(List<int> data) {
     _channel?.sink.add(data);
   }

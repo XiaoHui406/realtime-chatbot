@@ -8,37 +8,33 @@ import '../services/ws_service.dart';
 import '../services/audio_recorder.dart';
 import '../services/audio_player.dart';
 import '../services/wav_utils.dart';
-import 'reference_audio_page.dart';
 
-class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
+class CallPage extends StatefulWidget {
+  final int sessionId;
+
+  const CallPage({super.key, required this.sessionId});
 
   @override
-  State<ChatPage> createState() => _ChatPageState();
+  State<CallPage> createState() => _CallPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _CallPageState extends State<CallPage> {
   final _wsService = WebSocketService();
   final _recorderService = AudioRecorderService();
   final _playerService = AudioPlayerService();
 
   bool _isConnected = false;
-  bool _isRecording = false;
-  bool _isPlaying = false;
-  String _statusText = 'Not connected';
-  final List<_ChatMessage> _messages = [];
-
+  String _statusText = 'Connecting...';
   StreamSubscription? _wsSubscription;
   StreamSubscription? _audioSubscription;
   final List<int> _audioBuffer = [];
-  static const int _chunkSize = 1024; // 512 samples * 2 bytes (int16)
+  static const int _chunkSize = 1024;
 
   @override
   void initState() {
     super.initState();
-    _playerService.onPlayingChanged = (playing) {
-      if (mounted) setState(() => _isPlaying = playing);
-    };
+    _playerService.onPlayingChanged = (_) {};
+    _connect();
   }
 
   @override
@@ -49,14 +45,6 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
-  Future<void> _toggleConnection() async {
-    if (_isConnected) {
-      _disconnect();
-    } else {
-      await _connect();
-    }
-  }
-
   Future<void> _connect() async {
     final hasPermission = await _recorderService.hasPermission();
     if (!hasPermission) {
@@ -64,16 +52,15 @@ class _ChatPageState extends State<ChatPage> {
       return;
     }
 
-    try {
-      setState(() => _statusText = 'Connecting...');
-      await _wsService.connect('${AppConfig.wsBaseUrl}/realtime-chat');
+    await Geolocator.requestPermission();
 
+    try {
+      await _wsService.connectWithSession('${AppConfig.wsBaseUrl}/realtime-chat', widget.sessionId);
       await _recorderService.start();
 
       setState(() {
         _isConnected = true;
-        _isRecording = true;
-        _statusText = 'Connected - listening...';
+        _statusText = 'Connected';
       });
 
       _wsSubscription = _wsService.stream?.listen(
@@ -92,16 +79,14 @@ class _ChatPageState extends State<ChatPage> {
         if (_wsService.isConnected) {
           _audioBuffer.addAll(audioData);
           while (_audioBuffer.length >= _chunkSize) {
-            final chunk = Uint8List.fromList(
-              _audioBuffer.sublist(0, _chunkSize),
-            );
+            final chunk = Uint8List.fromList(_audioBuffer.sublist(0, _chunkSize));
             _audioBuffer.removeRange(0, _chunkSize);
             _wsService.sendAudio(chunk);
           }
         }
       });
     } catch (e) {
-      setState(() => _statusText = 'Connection failed: $e');
+      setState(() => _statusText = 'Connection failed');
     }
   }
 
@@ -114,22 +99,12 @@ class _ChatPageState extends State<ChatPage> {
             _handleLocationRequest(json['request_id'] as String);
             return;
           }
-          final msg = json['msg'] ?? message;
-          setState(() {
-            _messages.add(_ChatMessage(text: msg.toString(), isUser: false));
-          });
-          return;
         }
       } catch (_) {}
-      setState(() {
-        _messages.add(_ChatMessage(text: message, isUser: false));
-      });
     } else if (message is List<int>) {
       final float32List = bytesToFloat32List(message);
       _playerService.playFloat32Pcm(float32List, 24000);
-      setState(() {
-        _messages.add(_ChatMessage(text: '[AI voice response]', isUser: false));
-      });
+      setState(() => _statusText = 'Assistant speaking...');
     }
   }
 
@@ -168,8 +143,8 @@ class _ChatPageState extends State<ChatPage> {
 
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 8),
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 5),
         ),
       );
 
@@ -207,114 +182,85 @@ class _ChatPageState extends State<ChatPage> {
     if (mounted) {
       setState(() {
         _isConnected = false;
-        _isRecording = false;
-        _isPlaying = false;
         _statusText = 'Disconnected';
       });
     }
   }
 
+  Future<void> _hangUp() async {
+    _disconnect();
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI Voice Chat'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.multitrack_audio),
-            tooltip: 'Reference Audio',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ReferenceAudioPage()),
-              );
-            },
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF3D3D6B),
+        body: SafeArea(
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+              const Spacer(flex: 2),
+              _buildStatusSection(),
+              const Spacer(),
+              _buildHangUpButton(),
+              const SizedBox(height: 48),
+            ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildStatusBar(),
-          Expanded(child: _buildMessageList()),
-        ],
-      ),
-      floatingActionButton: _buildMicButton(),
-    );
-  }
-
-  Widget _buildStatusBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: _isConnected ? Colors.green.shade50 : Colors.grey.shade100,
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _isConnected ? Colors.green : Colors.red,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(_statusText)),
-          if (_isRecording)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          if (_isPlaying) ...[
-            const SizedBox(width: 8),
-            const Icon(Icons.volume_up, size: 18, color: Colors.blue),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMessageList() {
-    if (_messages.isEmpty) {
-      return const Center(
-        child: Text(
-          'Press the mic button to connect',
-          style: TextStyle(color: Colors.grey),
         ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final msg = _messages[index];
-        return ListTile(
-          dense: true,
-          leading: Icon(
-            msg.isUser ? Icons.person : Icons.smart_toy,
-            size: 20,
-            color: msg.isUser ? Colors.blue : Colors.green,
+      ),
+      ),
+    );
+  }
+
+  Widget _buildStatusSection() {
+    return Column(
+      children: [
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isConnected ? Colors.green.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.2),
           ),
-          title: Text(msg.text, style: const TextStyle(fontSize: 14)),
-        );
-      },
+          child: Icon(
+            _isConnected ? Icons.mic : Icons.mic_off,
+            size: 40,
+            color: _isConnected ? Colors.green : Colors.grey,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _statusText,
+          style: const TextStyle(fontSize: 18, color: Colors.white70),
+        ),
+        if (_isConnected) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Talking with AI...',
+            style: TextStyle(fontSize: 14, color: Colors.white38),
+          ),
+        ],
+      ],
     );
   }
 
-  Widget _buildMicButton() {
-    return FloatingActionButton.extended(
-      onPressed: _toggleConnection,
-      backgroundColor: _isConnected
-          ? Colors.red
-          : Theme.of(context).colorScheme.primary,
-      icon: Icon(_isConnected ? Icons.stop : Icons.mic),
-      label: Text(_isConnected ? 'Disconnect' : 'Connect'),
+  Widget _buildHangUpButton() {
+    return GestureDetector(
+      onTap: _hangUp,
+      child: Container(
+        width: 72,
+        height: 72,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.red,
+        ),
+        child: const Icon(Icons.call_end, color: Colors.white, size: 36),
+      ),
     );
   }
-}
-
-class _ChatMessage {
-  final String text;
-  final bool isUser;
-
-  _ChatMessage({required this.text, required this.isUser});
 }
