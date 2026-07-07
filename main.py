@@ -20,6 +20,9 @@ import service_registry
 
 SAMPLE_RATE: int = 16000
 CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
+
+# 16000块/秒 * 0.032秒 * 2byte/块(16bit/块) = 1024byte
+# 每次发送的音频要满足16kHz采样率，16bit位深，1024byte大小
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
 BUFFER_MAX_SIZE = CHUNK_SIZE * 1000
 
@@ -164,13 +167,11 @@ separate_char_list: List[str] = [
 
 
 async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queue: asyncio.Queue[str]):
-    chatbot_service: ChatbotService = LLMAPIService()
-
     while True:
         try:
             asr_content: str = await asr_content_queue.get()
             response_content = ""
-            async for content in chatbot_service.chat([
+            async for content in service_registry.chatbot_service.chat([
                 ChatCompletionContentPartTextParam(
                     type='text', text=asr_content)
             ]):
