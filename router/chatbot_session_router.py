@@ -43,10 +43,20 @@ async def create_session(create_session_schema: CreateSessionSchema):
         chatbot_session.title = create_session_schema.title
     async with get_database() as database:
         database.add(chatbot_session)
+        await database.commit()
+        await database.refresh(chatbot_session)
+
+        system_message = ChatbotMessage(
+            session_id=chatbot_session.id,
+            role='system',
+            content='这是一款ai语音聊天应用，用户的输入来自实时asr。你的回复会被tts转为音频，所以回复保证只有一段话且使用纯文本不包含表情，禁止使用markdown格式回复'
+        )
+        database.add(system_message)
+
         if create_session_schema.initial_prompt:
             chatbot_message = ChatbotMessage(
                 session_id=chatbot_session.id,
-                role='System',
+                role='system',
                 content=create_session_schema.initial_prompt
             )
             database.add(chatbot_message)
