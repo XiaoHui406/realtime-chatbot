@@ -12,5 +12,5 @@ class ChatbotService(ABC):
         ...
 
     @abstractmethod
-    async def set_session(self, session_id: int) -> List[ChatCompletionMessageParam]:
+    async def set_session(self, session_id: int) -> None:
         ...
