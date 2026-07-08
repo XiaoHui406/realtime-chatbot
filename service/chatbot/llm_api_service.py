@@ -25,10 +25,7 @@ from model.chatbot_session import ChatBotSession, ChatbotMessage, ChatbotToolCal
 
 
 class LLMAPIService(ChatbotService):
-    def __init__(
-        self,
-        initial_prompt: str | None = None
-    ) -> None:
+    def __init__(self) -> None:
         load_dotenv()
         self.api_key = os.getenv("API_KEY")
         self.base_url = os.getenv("BASE_URL")
@@ -44,18 +41,7 @@ class LLMAPIService(ChatbotService):
             base_url=self.base_url,
             api_key=self.api_key
         )
-        self.messages: List[ChatCompletionMessageParam] = [
-            ChatCompletionSystemMessageParam(
-                role='system', content='这是一款ai语音聊天应用，用户的输入来自实时asr。你的回复会被tts转为音频，所以回复保证只有一段话且使用纯文本不包含表情，禁止使用markdown格式回复')
-        ]
-
-        if initial_prompt:
-            self.messages.append(
-                ChatCompletionSystemMessageParam(
-                    role='system', content=initial_prompt
-                )
-            )
-
+        self.messages: List[ChatCompletionMessageParam] = []
         self._session_id: int | None = None
 
     async def chat(self, message: List[ChatCompletionContentPartParam]) -> AsyncGenerator[str, None]:
@@ -63,6 +49,7 @@ class LLMAPIService(ChatbotService):
             raise ValueError('llm model is not set')
         if not tool_manager_reg.tool_manager:
             raise RuntimeError('tool_manager is not initialized')
+
         print(f'{self.messages=}')
 
         user_message = ChatCompletionUserMessageParam(
@@ -91,6 +78,15 @@ class LLMAPIService(ChatbotService):
             async for chunk in response_stream:
                 choice = chunk.choices[0]
                 delta = choice.delta
+                if len(response_content_list) > 0 and delta.tool_calls:
+                    response_content = ''.join(response_content_list)
+                    assistant_msg = ChatCompletionAssistantMessageParam(
+                        role='assistant', content=response_content
+                    )
+                    self.messages.append(assistant_msg)
+                    await self._save_message(assistant_msg)
+                    response_content_list = []
+
                 if delta.content:
                     print(f'{delta.content=}')
                     yield delta.content
@@ -147,10 +143,9 @@ class LLMAPIService(ChatbotService):
                 else:
                     continue
 
-    async def set_session(self, session_id: int) -> List[ChatCompletionMessageParam]:
+    async def set_session(self, session_id: int) -> None:
         self._session_id = session_id
         self.messages = await get_session_messages(session_id)
-        return self.messages
 
     async def _ensure_session(self):
         if self._session_id is not None:
