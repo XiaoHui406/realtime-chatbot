@@ -25,9 +25,12 @@ CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 # 16000块/秒 * 0.032秒 * 2byte/块(16bit/块) = 1024byte
 # 每次发送的音频要满足16kHz采样率，16bit位深，1024byte大小
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
-BUFFER_MAX_SIZE = CHUNK_SIZE * 1000
+
+# 1000秒的音频数据的长度，大约30MB
+BUFFER_MAX_SIZE = SAMPLE_RATE * 1000
 
 MAX_SEGMENT_GAP: float = 0.5  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
+MIN_CHUNK_SAMPLES: int = int(SAMPLE_RATE * 0.1)  # ASR 要求的最短音频片段(samples)
 
 
 device = torch.device('cuda')
@@ -121,7 +124,8 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None):
                     # 如果时间差超过MAX_SEGMENT_GAP，将片段发送给asr_worker
                     if (len(buffer) - timestamp_end) / SAMPLE_RATE > MAX_SEGMENT_GAP:
                         chunk = buffer[timestamp_start:timestamp_end]
-                        await audio_queue.put(chunk)
+                        if len(chunk) >= MIN_CHUNK_SAMPLES:
+                            await audio_queue.put(chunk)
                         if len(buffer) > BUFFER_MAX_SIZE:
                             buffer = buffer[timestamp_end:]
                             buffer_offset += timestamp_end  # 更新偏移量
@@ -147,9 +151,12 @@ async def asr_worker(audio_queue: asyncio.Queue, asr_content_queue: asyncio.Queu
     while True:
         try:
             audio = await audio_queue.get()
-            asr_result = await service_registry.asr_service.transcribe(audio)
-            print(f'{asr_result=}')
-            await asr_content_queue.put(asr_result)
+            try:
+                asr_result = await service_registry.asr_service.transcribe(audio)
+                print(f'{asr_result=}')
+                await asr_content_queue.put(asr_result)
+            except Exception as e:
+                print(f'ASR error: {e}')
         except asyncio.CancelledError:
             raise
 

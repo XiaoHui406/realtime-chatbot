@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List
 
@@ -22,6 +23,31 @@ from utils.tool_call import tool_manager_registry as tool_manager_reg
 
 from database_engine import get_database
 from model.chatbot_session import ChatBotSession, ChatbotMessage, ChatbotToolCall
+
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F600-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002702-\U000027B0"
+    "\U00002600-\U000027BF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F1E0-\U0001F1FF"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_chunk(text: str) -> str:
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    text = re.sub(r'^#{1,6}\s', '', text, flags=re.MULTILINE)
+    text = _EMOJI_RE.sub('', text)
+    return text
 
 
 class LLMAPIService(ChatbotService):
@@ -89,8 +115,10 @@ class LLMAPIService(ChatbotService):
 
                 if delta.content:
                     print(f'{delta.content=}')
-                    yield delta.content
-                    response_content_list.append(delta.content)
+                    filtered = _strip_chunk(delta.content)
+                    if filtered:
+                        yield filtered
+                        response_content_list.append(filtered)
 
                 elif delta.tool_calls:
                     for tool_call in delta.tool_calls:
