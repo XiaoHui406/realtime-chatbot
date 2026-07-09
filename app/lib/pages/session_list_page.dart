@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'chat_detail_page.dart';
+import 'settings_page.dart';
 
 class SessionListPage extends StatefulWidget {
   const SessionListPage({super.key});
@@ -107,6 +108,14 @@ class _SessionListPageState extends State<SessionListPage> {
       appBar: AppBar(
         title: const Text('对话'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsPage()),
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

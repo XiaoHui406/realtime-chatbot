@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'pages/session_list_page.dart';
+import 'services/settings_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SettingsService().load();
   runApp(const MyApp());
 }
 

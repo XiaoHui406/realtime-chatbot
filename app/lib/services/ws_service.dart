@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'config.dart';
+import 'settings_service.dart';
+
 class WebSocketService {
   WebSocketChannel? _channel;
 
@@ -8,7 +11,13 @@ class WebSocketService {
   bool get isConnected => _channel != null;
 
   Future<void> connect(String url) async {
-    _channel = WebSocketChannel.connect(Uri.parse(url));
+    final apiKey = SettingsService().apiKey;
+    var fullUrl = url;
+    if (apiKey.isNotEmpty) {
+      final separator = url.contains('?') ? '&' : '?';
+      fullUrl = '$url${separator}api_key=$apiKey';
+    }
+    _channel = WebSocketChannel.connect(Uri.parse(fullUrl));
     await _channel!.ready;
   }
 

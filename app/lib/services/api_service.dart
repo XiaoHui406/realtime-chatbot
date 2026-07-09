@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
+import 'settings_service.dart';
 
 class ReferenceAudioInfo {
   final int id;
@@ -28,8 +29,17 @@ class ApiService {
 
   ApiService({this.baseUrl = AppConfig.httpBaseUrl});
 
+  Map<String, String> get _authHeaders {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final apiKey = SettingsService().apiKey;
+    if (apiKey.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $apiKey';
+    }
+    return headers;
+  }
+
   Future<List<ReferenceAudioInfo>> getReferenceAudios() async {
-    final response = await http.get(Uri.parse('$baseUrl/reference_audio'));
+    final response = await http.get(Uri.parse('$baseUrl/reference_audio'), headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to load reference audios: ${response.statusCode}');
     }
@@ -48,6 +58,7 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/reference_audio')
         .replace(queryParameters: {'name': name, 'tags': tags});
     final request = http.MultipartRequest('POST', uri);
+    request.headers['Authorization'] = _authHeaders['Authorization'] ?? '';
     request.files.add(await http.MultipartFile.fromPath('audio', filePath, filename: fileName));
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
@@ -59,7 +70,7 @@ class ApiService {
 
   Future<String> setReferenceAudio(int audioId) async {
     final uri = Uri.parse('$baseUrl/reference_audio/$audioId/activate');
-    final response = await http.put(uri);
+    final response = await http.put(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to set reference audio: ${response.statusCode}');
     }
@@ -69,7 +80,7 @@ class ApiService {
   Future<String> editReferenceAudio(int audioId, String name, String tags) async {
     final uri = Uri.parse('$baseUrl/reference_audio/$audioId')
         .replace(queryParameters: {'name': name, 'tags': tags});
-    final response = await http.put(uri);
+    final response = await http.put(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to edit reference audio: ${response.statusCode}');
     }
@@ -78,7 +89,7 @@ class ApiService {
 
   Future<String> deleteReferenceAudio(int audioId) async {
     final uri = Uri.parse('$baseUrl/reference_audio/$audioId');
-    final response = await http.delete(uri);
+    final response = await http.delete(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to delete reference audio: ${response.statusCode}');
     }
@@ -88,7 +99,7 @@ class ApiService {
   Future<List<ChatbotSessionInfo>> getSessions({int limit = 50, int offset = 0}) async {
     final uri = Uri.parse('$baseUrl/chatbot_session')
         .replace(queryParameters: {'limit': limit.toString(), 'offset': offset.toString()});
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to get sessions: ${response.statusCode}');
     }
@@ -103,7 +114,7 @@ class ApiService {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
     if (initialPrompt != null) body['initial_prompt'] = initialPrompt;
-    final response = await http.post(uri, body: jsonEncode(body), headers: {'Content-Type': 'application/json'});
+    final response = await http.post(uri, body: jsonEncode(body), headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to create session: ${response.statusCode}');
     }
@@ -113,7 +124,7 @@ class ApiService {
   Future<String> editSession(int sessionId, String title) async {
     final uri = Uri.parse('$baseUrl/chatbot_session/$sessionId')
         .replace(queryParameters: {'title': title});
-    final response = await http.put(uri);
+    final response = await http.put(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to edit session: ${response.statusCode}');
     }
@@ -122,7 +133,7 @@ class ApiService {
 
   Future<String> deleteSession(int sessionId) async {
     final uri = Uri.parse('$baseUrl/chatbot_session/$sessionId');
-    final response = await http.delete(uri);
+    final response = await http.delete(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to delete session: ${response.statusCode}');
     }
@@ -131,7 +142,7 @@ class ApiService {
 
   Future<List<ChatbotMessageInfo>> getSessionMessages(int sessionId) async {
     final uri = Uri.parse('$baseUrl/chatbot_session/$sessionId/messages');
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: _authHeaders);
     if (response.statusCode != 200) {
       throw Exception('Failed to get messages: ${response.statusCode}');
     }
