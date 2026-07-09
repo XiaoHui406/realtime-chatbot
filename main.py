@@ -2,7 +2,8 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.responses import JSONResponse
 import numpy as np
 from silero_vad import VADIterator
 import torch
@@ -16,6 +17,7 @@ from router.reference_audio_router import reference_audio_router
 from service.chatbot.interface.chatbot_service import ChatbotService
 from service.chatbot.llm_api_service import LLMAPIService
 from utils.tool_call.tool_manager_registry import init_tool_manager
+from utils.auth import AUTH_API_KEY
 import service_registry
 
 
@@ -25,12 +27,9 @@ CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 # 16000块/秒 * 0.032秒 * 2byte/块(16bit/块) = 1024byte
 # 每次发送的音频要满足16kHz采样率，16bit位深，1024byte大小
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
-
-# 1000秒的音频数据的长度，大约30MB
-BUFFER_MAX_SIZE = SAMPLE_RATE * 1000
+BUFFER_MAX_SIZE = CHUNK_SIZE * 1000
 
 MAX_SEGMENT_GAP: float = 0.5  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
-MIN_CHUNK_SAMPLES: int = int(SAMPLE_RATE * 0.1)  # ASR 要求的最短音频片段(samples)
 
 
 device = torch.device('cuda')
@@ -47,12 +46,32 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not AUTH_API_KEY:
+        return await call_next(request)
+
+    if request.url.path == "/realtime-chat":
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header != f"Bearer {AUTH_API_KEY}":
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
+    return await call_next(request)
+
+
 app.include_router(reference_audio_router)
 app.include_router(chatbot_session_router)
 
 
 @app.websocket("/realtime-chat")
-async def realtime_chat(websocket: WebSocket, session_id: int | None = None):
+async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api_key: str = ""):
+    if AUTH_API_KEY and api_key != AUTH_API_KEY:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
     await websocket.accept()
     await websocket.send_json({"msg": "welcome to connect"})
     if session_id is not None:
@@ -124,8 +143,7 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None):
                     # 如果时间差超过MAX_SEGMENT_GAP，将片段发送给asr_worker
                     if (len(buffer) - timestamp_end) / SAMPLE_RATE > MAX_SEGMENT_GAP:
                         chunk = buffer[timestamp_start:timestamp_end]
-                        if len(chunk) >= MIN_CHUNK_SAMPLES:
-                            await audio_queue.put(chunk)
+                        await audio_queue.put(chunk)
                         if len(buffer) > BUFFER_MAX_SIZE:
                             buffer = buffer[timestamp_end:]
                             buffer_offset += timestamp_end  # 更新偏移量
@@ -151,12 +169,9 @@ async def asr_worker(audio_queue: asyncio.Queue, asr_content_queue: asyncio.Queu
     while True:
         try:
             audio = await audio_queue.get()
-            try:
-                asr_result = await service_registry.asr_service.transcribe(audio)
-                print(f'{asr_result=}')
-                await asr_content_queue.put(asr_result)
-            except Exception as e:
-                print(f'ASR error: {e}')
+            asr_result = await service_registry.asr_service.transcribe(audio)
+            print(f'{asr_result=}')
+            await asr_content_queue.put(asr_result)
         except asyncio.CancelledError:
             raise
 
