@@ -55,7 +55,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('错误: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -65,16 +65,16 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Audio'),
-        content: Text('Delete "${audio.name}"?'),
+        title: const Text('删除音频'),
+        content: Text('确定要删除"${audio.name}"吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('取消'),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -92,7 +92,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('错误: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -105,32 +105,32 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Edit Reference Audio'),
+        title: const Text('编辑参考音频'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
+              decoration: const InputDecoration(labelText: '名称'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: tagsController,
-              decoration: const InputDecoration(labelText: 'Tags'),
+              decoration: const InputDecoration(labelText: '标签'),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('取消'),
           ),
           ElevatedButton(
             onPressed: () {
               if (nameController.text.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   const SnackBar(
-                    content: Text('Name cannot be empty'),
+                    content: Text('名称不能为空'),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -138,7 +138,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
               }
               Navigator.of(ctx).pop(true);
             },
-            child: const Text('Save'),
+            child: const Text('保存'),
           ),
         ],
       ),
@@ -154,14 +154,14 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Audio updated successfully')),
+          const SnackBar(content: Text('音频更新成功')),
         );
         _loadAudios();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Edit failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('编辑失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -176,19 +176,19 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Upload Reference Audio'),
+        title: const Text('上传参考音频'),
         content: StatefulBuilder(
           builder: (context, setDialogState) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: const InputDecoration(labelText: '名称'),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: tagsController,
-                decoration: const InputDecoration(labelText: 'Tags'),
+                decoration: const InputDecoration(labelText: '标签'),
               ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
@@ -204,7 +204,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
                   }
                 },
                 icon: const Icon(Icons.audio_file),
-                label: Text(fileName ?? 'Select Audio File'),
+                label: Text(fileName ?? '选择音频文件'),
               ),
             ],
           ),
@@ -212,14 +212,14 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('取消'),
           ),
           ElevatedButton(
             onPressed: () {
               if (filePath == null || nameController.text.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   const SnackBar(
-                    content: Text('Please select a file and enter a name'),
+                    content: Text('请选择文件并输入名称'),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -227,7 +227,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
               }
               Navigator.of(ctx).pop(true);
             },
-            child: const Text('Upload'),
+            child: const Text('上传'),
           ),
         ],
       ),
@@ -244,14 +244,14 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Audio uploaded successfully')),
+          const SnackBar(content: Text('音频上传成功')),
         );
         _loadAudios();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('上传失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -261,7 +261,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reference Audio'),
+        title: const Text('参考音频'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -273,7 +273,7 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _uploadAudio,
         icon: const Icon(Icons.add),
-        label: const Text('Upload'),
+        label: const Text('上传'),
       ),
       body: _buildBody(),
     );
@@ -284,11 +284,11 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.red)));
+      return Center(child: Text('错误: $_error', style: const TextStyle(color: Colors.red)));
     }
     if (_audios.isEmpty) {
       return const Center(
-        child: Text('No reference audio available', style: TextStyle(color: Colors.grey)),
+        child: Text('暂无参考音频', style: TextStyle(color: Colors.grey)),
       );
     }
     return RefreshIndicator(
@@ -302,25 +302,25 @@ class _ReferenceAudioPageState extends State<ReferenceAudioPage> {
             child: ListTile(
               leading: const Icon(Icons.multitrack_audio),
               title: Text(audio.name),
-              subtitle: Text(audio.tags.isNotEmpty ? audio.tags : 'No tags'),
+              subtitle: Text(audio.tags.isNotEmpty ? audio.tags : '无标签'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
                     onPressed: () => _editAudio(audio),
                     icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit',
+                    tooltip: '编辑',
                   ),
                   FilledButton.tonalIcon(
                     onPressed: () => _setAudio(audio.id),
                     icon: const Icon(Icons.check, size: 18),
-                    label: const Text('Set'),
+                    label: const Text('设为当前'),
                   ),
                   const SizedBox(width: 4),
                   IconButton(
                     onPressed: () => _deleteAudio(audio),
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    tooltip: 'Delete',
+                    tooltip: '删除',
                   ),
                 ],
               ),
