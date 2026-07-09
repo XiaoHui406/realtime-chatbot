@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'chat_detail_page.dart';
+import 'reference_audio_page.dart';
 import 'settings_page.dart';
 
 class SessionListPage extends StatefulWidget {
@@ -109,6 +110,12 @@ class _SessionListPageState extends State<SessionListPage> {
         title: const Text('对话'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.multitrack_audio),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ReferenceAudioPage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(
