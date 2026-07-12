@@ -21,7 +21,7 @@ from utils.auth import AUTH_API_KEY
 import service_registry
 
 
-SAMPLE_RATE: int = 16000
+SAMPLE_RATE: int = 16000  # 采样率，音频每秒的采用次数
 CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 
 # 16000块/秒 * 0.032秒 * 2byte/块(16bit/块) = 1024byte
@@ -39,9 +39,11 @@ device = torch.device('cuda')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
+    # 初始化各个service
     await service_registry.init_service()
+    # 当数据库和表未创建时执行创建
     await create_database_and_table()
+    # 初始化tool_manager，方便大模型调用tool
     await init_tool_manager()
 
     yield
@@ -52,12 +54,15 @@ app = FastAPI(lifespan=lifespan)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # 如果AUTH_API_KEY为None，则跳过验证
     if not AUTH_API_KEY:
         return await call_next(request)
 
+    # websocket请求在请求内自行做验证
     if request.url.path == "/realtime-chat":
         return await call_next(request)
 
+    # 获取headers中的Authorization，如果不是AUTH_API_KEY，返回401
     auth_header = request.headers.get("Authorization", "")
     if auth_header != f"Bearer {AUTH_API_KEY}":
         return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
@@ -71,54 +76,84 @@ app.include_router(chatbot_session_router)
 
 @app.websocket("/realtime-chat")
 async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api_key: str = ""):
+    # AUTH_API_KEY身份验证
     if AUTH_API_KEY and api_key != AUTH_API_KEY:
         await websocket.close(code=4001, reason="Unauthorized")
         return
+
+    # 接受连接并发送招呼语
     await websocket.accept()
     await websocket.send_json({"msg": "welcome to connect"})
+
+    # 给chatbot_service设置session_id，并从数据库中获取对应session的对话上下文
     if session_id is not None:
         await service_registry.chatbot_service.set_session(session_id)
+
+    # 给client_request_manager设置websocket连接
+    # 方便大模型调用需要向客户端发送请求的tool(如get_location)时能通过websocket发送
     service_registry.client_request_manager.set_websocket(websocket)
-    buffer = np.array([], dtype=np.float32)
+
+    buffer = np.array([], dtype=np.float32)  # 存储收到的音频数据
     buffer_offset = 0  # 跟踪 buffer 的起始偏移量
 
+    # 存放VAD识别出的音频片段数据
     audio_queue = asyncio.Queue()
+    # 存放ASR从音频中识别出的文字
     asr_content_queue: asyncio.Queue[str] = asyncio.Queue()
+    # 存放LLM输出的回复，按separate_char_list切分
     llm_content_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    # 创建各个任务
     asr_task = asyncio.create_task(asr_worker(audio_queue, asr_content_queue))
     chatbot_task = asyncio.create_task(
         chatbot_worker(asr_content_queue, llm_content_queue))
     tts_task = asyncio.create_task(tts_worker(websocket, llm_content_queue))
+    # 创建VAD迭代器
     vad_iter = VADIterator(model=service_registry.vad_model)
 
+    # 存放VAD识别出的时间戳(实际为buffer的索引，数值上等于SAMPLE_RATE * 时间戳)
+    # start和end共同指出一个音频片段
     timestamp_start: int | float | None = None
     timestamp_end: int | float | None = None
 
     try:
         while True:
+            # 获取客户端发送的数据
             receive_data = await websocket.receive()
+            # 数据类型为text，该情况下有两种可能
+            # 一是收到exit，客户端主动断开连接
+            # 二是收到client_request_manager向客户端发起请求的返回数据
             if "text" in receive_data:
                 if receive_data["text"] == "exit":
                     break
                 else:
                     try:
-                        data = json.loads(receive_data["text"])
+                        data: Dict = json.loads(receive_data["text"])
                         if data.get("type") == "response":
+                            # 获取返回结果
                             service_registry.client_request_manager.handle_response(
                                 data["request_id"], data["result"])
                     except (json.JSONDecodeError, KeyError, TypeError):
                         pass
                     continue
+            # 收到二进制数据，为客户端发送的音频数据
             elif "bytes" in receive_data:
+                # 音频数据转为numpy数组
                 audio_bytes = np.frombuffer(
                     receive_data["bytes"], dtype=np.int16)
+                # 由int16转为float32，用于之后的VAD和ASR推理
                 waveform = audio_bytes.astype(np.float32) / 32768.0
             else:
                 continue
 
+            # 音频数据存入buffer
             buffer = np.concatenate((buffer, waveform))
             # print(f'{len(buffer)=}')
 
+            # 识别时间戳，识别出的timestamp有三种情况
+            # 1. {'start': xxx}，识别出了音频片段的开头
+            # 2. {'end': xxx}，识别出了音频片段的结尾
+            # 3. None，未识别出时间戳
             timestamp: Dict[str, float | int] | None = vad_iter(
                 x=torch.as_tensor(data=waveform, device=device)
             )  # {'start': xxx}, {'end': xxx}
