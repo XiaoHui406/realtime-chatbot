@@ -19,6 +19,7 @@ from openai.types.chat.chat_completion_content_part_param import ChatCompletionC
 
 from service.chatbot.interface.chatbot_service import ChatbotService
 from utils.chatbot_session_utils import get_session_messages
+from utils.latency_tracer import tracer
 from utils.tool_call import tool_manager_registry as tool_manager_reg
 
 from database_engine import get_database
@@ -69,6 +70,27 @@ class LLMAPIService(ChatbotService):
         )
         self.messages: List[ChatCompletionMessageParam] = []
         self._session_id: int | None = None
+        self._pending_messages: List[ChatCompletionMessageParam] = []
+
+    async def warmup(self) -> None:
+        """发送一次极小的请求，预热TCP+TLS连接，降低首次对话的TTFT"""
+        if not self.llm_model:
+            return
+        try:
+            await self.client.chat.completions.create(
+                model=self.llm_model,
+                messages=[ChatCompletionUserMessageParam(
+                    role='user', content='hi')],
+                max_tokens=1,
+                extra_body={
+                    "thinking": {
+                        "type": "disabled"
+                    }
+                }
+            )
+        except Exception as e:
+            # 预热失败不影响正常流程
+            print(f'llm warmup failed: {e}')
 
     async def chat(self, message: List[ChatCompletionContentPartParam]) -> AsyncGenerator[str, None]:
         if not self.llm_model:
@@ -76,102 +98,103 @@ class LLMAPIService(ChatbotService):
         if not tool_manager_reg.tool_manager:
             raise RuntimeError('tool_manager is not initialized')
 
-        print(f'{self.messages=}')
-
         user_message = ChatCompletionUserMessageParam(
             role='user', content=message
         )
         self.messages.append(user_message)
         await self._save_message(user_message)
 
-        while True:
-            response_stream = await self.client.chat.completions.create(
-                model=self.llm_model,
-                messages=self.messages,
-                stream=True,
-                tools=await tool_manager_reg.tool_manager.agenerate_tools(),
-                extra_body={
-                    "thinking": {
-                        "type": "disabled"
+        try:
+            while True:
+                # 打点：向LLM发起请求
+                tracer.mark("llm_request_start", first_only=True)
+                response_stream = await self.client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=self.messages,
+                    stream=True,
+                    tools=await tool_manager_reg.tool_manager.agenerate_tools(),
+                    extra_body={
+                        "thinking": {
+                            "type": "disabled"
+                        }
                     }
-                }
-            )
+                )
 
-            response_content_list: List[str] = []
-            tool_call_map: Dict[int,
-                                ChatCompletionMessageFunctionToolCallParam] = {}
-            tool_call_args_map: Dict[int, List[str]] = {}
-            async for chunk in response_stream:
-                choice = chunk.choices[0]
-                delta = choice.delta
-                if len(response_content_list) > 0 and delta.tool_calls:
-                    response_content = ''.join(response_content_list)
-                    assistant_msg = ChatCompletionAssistantMessageParam(
-                        role='assistant', content=response_content
-                    )
-                    self.messages.append(assistant_msg)
-                    await self._save_message(assistant_msg)
-                    response_content_list = []
-
-                if delta.content:
-                    print(f'{delta.content=}')
-                    filtered = _strip_chunk(delta.content)
-                    if filtered:
-                        yield filtered
-                        response_content_list.append(filtered)
-
-                elif delta.tool_calls:
-                    for tool_call in delta.tool_calls:
-                        if tool_call.function:
-                            if tool_call.id and tool_call.function.name:
-                                tool_call_map[tool_call.index] = ChatCompletionMessageFunctionToolCallParam(
-                                    id=tool_call.id,
-                                    type='function',
-                                    function=Function(
-                                        name=tool_call.function.name,
-                                        arguments=''
-                                    )
-                                )
-                            elif tool_call.function.arguments:
-                                print(f'{tool_call.function.arguments=}')
-                                tool_call_args_map.setdefault(tool_call.index, []).append(
-                                    tool_call.function.arguments
-                                )
-                elif not delta.tool_calls and choice.finish_reason == 'tool_calls':
-                    tool_calls_list = list(tool_call_map.values())
-                    for (index, tc) in tool_call_map.items():
-                        tc['function']['arguments'] = ''.join(
-                            tool_call_args_map.get(index, []))
-
-                    assistant_msg = ChatCompletionAssistantMessageParam(
-                        role='assistant',
-                        content=None,
-                        tool_calls=tool_calls_list
-                    )
-                    self.messages.append(assistant_msg)
-                    await self._save_message(assistant_msg)
-
-                    tool_callbacks = await asyncio.gather(*(
-                        tool_manager_reg.tool_manager.acall_tool(tool_call=tc) for tc in tool_calls_list
-                    ))
-                    self.messages.extend(tool_callbacks)
-                    for callback in tool_callbacks:
-                        await self._save_message(callback)
-
-                elif choice.finish_reason == 'stop':
-                    if response_content_list:
+                response_content_list: List[str] = []
+                tool_call_map: Dict[int,
+                                    ChatCompletionMessageFunctionToolCallParam] = {}
+                tool_call_args_map: Dict[int, List[str]] = {}
+                async for chunk in response_stream:
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    if len(response_content_list) > 0 and delta.tool_calls:
                         response_content = ''.join(response_content_list)
                         assistant_msg = ChatCompletionAssistantMessageParam(
-                            role="assistant", content=response_content
+                            role='assistant', content=response_content
                         )
                         self.messages.append(assistant_msg)
                         await self._save_message(assistant_msg)
-                    print(f'{self.messages=}')
-                    return
-                else:
-                    continue
+                        response_content_list = []
+
+                    if delta.content:
+                        filtered = _strip_chunk(delta.content)
+                        if filtered:
+                            yield filtered
+                            response_content_list.append(filtered)
+
+                    elif delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            if tool_call.function:
+                                if tool_call.id and tool_call.function.name:
+                                    tool_call_map[tool_call.index] = ChatCompletionMessageFunctionToolCallParam(
+                                        id=tool_call.id,
+                                        type='function',
+                                        function=Function(
+                                            name=tool_call.function.name,
+                                            arguments=''
+                                        )
+                                    )
+                                elif tool_call.function.arguments:
+                                    tool_call_args_map.setdefault(tool_call.index, []).append(
+                                        tool_call.function.arguments
+                                    )
+                    elif not delta.tool_calls and choice.finish_reason == 'tool_calls':
+                        tool_calls_list = list(tool_call_map.values())
+                        for (index, tc) in tool_call_map.items():
+                            tc['function']['arguments'] = ''.join(
+                                tool_call_args_map.get(index, []))
+
+                        assistant_msg = ChatCompletionAssistantMessageParam(
+                            role='assistant',
+                            content=None,
+                            tool_calls=tool_calls_list
+                        )
+                        self.messages.append(assistant_msg)
+                        await self._save_message(assistant_msg)
+
+                        tool_callbacks = await asyncio.gather(*(
+                            tool_manager_reg.tool_manager.acall_tool(tool_call=tc) for tc in tool_calls_list
+                        ))
+                        self.messages.extend(tool_callbacks)
+                        for callback in tool_callbacks:
+                            await self._save_message(callback)
+
+                    elif choice.finish_reason == 'stop':
+                        if response_content_list:
+                            response_content = ''.join(response_content_list)
+                            assistant_msg = ChatCompletionAssistantMessageParam(
+                                role="assistant", content=response_content
+                            )
+                            self.messages.append(assistant_msg)
+                            await self._save_message(assistant_msg)
+                        return
+                    else:
+                        continue
+        finally:
+            await self._flush_pending_messages()
 
     async def set_session(self, session_id: int) -> None:
+        await self._flush_pending_messages()
         self._session_id = session_id
         self.messages = await get_session_messages(session_id)
 
@@ -186,40 +209,42 @@ class LLMAPIService(ChatbotService):
             self._session_id = session.id
             assert self._session_id is not None
 
-            for msg in self.messages:
-                db.add(ChatbotMessage(
+    async def _save_message(self, message: ChatCompletionMessageParam):
+        await self._ensure_session()
+        self._pending_messages.append(message)
+
+    async def _flush_pending_messages(self):
+        if not self._pending_messages:
+            return
+        assert self._session_id is not None
+        async with get_database() as db:
+            orm_msgs = []
+            for msg in self._pending_messages:
+                db_msg = ChatbotMessage(
                     session_id=self._session_id,
                     role=msg['role'],
                     content=msg.get('content'),
-                ))
-            await db.commit()
-
-    async def _save_message(self, message: ChatCompletionMessageParam):
-        await self._ensure_session()
-        assert self._session_id
-        async with get_database() as db:
-            db_msg = ChatbotMessage(
-                session_id=self._session_id,
-                role=message['role'],
-                content=message.get('content'),
-                tool_call_id=message.get('tool_call_id'),
-            )
-            db.add(db_msg)
+                    tool_call_id=msg.get('tool_call_id'),
+                )
+                db.add(db_msg)
+                orm_msgs.append(db_msg)
             await db.flush()
 
-            tool_calls = message.get('tool_calls')
-            if tool_calls:
-                for tool_call in tool_calls:
-                    func = tool_call.get('function')
-                    if func:
-                        db.add(ChatbotToolCall(
-                            message_id=db_msg.id,
-                            tool_call_id=tool_call['id'],
-                            function_name=func['name'],
-                            function_arguments=func['arguments'],
-                        ))
+            for pending, orm_msg in zip(self._pending_messages, orm_msgs):
+                tool_calls = pending.get('tool_calls')
+                if tool_calls:
+                    for tc in tool_calls:
+                        func = tc.get('function')
+                        if func:
+                            db.add(ChatbotToolCall(
+                                message_id=orm_msg.id,
+                                tool_call_id=tc['id'],
+                                function_name=func['name'],
+                                function_arguments=func['arguments'],
+                            ))
 
             session = await db.get(ChatBotSession, self._session_id)
             if session:
                 session.updated_at = datetime.now()
             await db.commit()
+        self._pending_messages.clear()
