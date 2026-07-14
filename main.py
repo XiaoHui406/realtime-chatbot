@@ -29,10 +29,11 @@ CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 # 每次发送的音频要满足16kHz采样率，16bit位深，1024byte大小
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
 
-# 1000秒的音频数据长度，大约30MB
-BUFFER_MAX_SIZE = SAMPLE_RATE * 1000
+MAX_SEGMENT_GAP: float = 0.2  # 片段最大间隔(s)
 
-MAX_SEGMENT_GAP: float = 0.2  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
+# 空闲buffer上限：无语音活动时buffer超过此长度则裁剪，防止静音连接导致的无限增长
+IDLE_BUFFER_MAX_S = 30  # 30秒静音
+IDLE_BUFFER_KEEP_S = 5  # 裁剪时保留最近5秒
 
 
 @asynccontextmanager
@@ -152,6 +153,13 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
             # 音频数据存入buffer
             buffer = np.concatenate((buffer, waveform))
 
+            # 静音连接保护：无语音活动时buffer超过上限则裁剪，保留最近几秒
+            if timestamp_start is None and len(buffer) > IDLE_BUFFER_MAX_S * SAMPLE_RATE:
+                trim_at = len(buffer) - IDLE_BUFFER_KEEP_S * SAMPLE_RATE
+                buffer = buffer[trim_at:]
+                buffer_offset += trim_at
+                vad_iter.reset_states()
+
             # 识别时间戳，识别出的timestamp有三种情况
             # 1. {'start': xxx}，识别出了音频片段的开头
             # 2. {'end': xxx}，识别出了音频片段的结尾
@@ -186,10 +194,10 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
                         # 打点：片段送入ASR队列（与vad_end之差即为MAX_SEGMENT_GAP等待的代价）
                         tracer.mark("segment_queued")
                         await audio_queue.put(chunk)
-                        if len(buffer) > BUFFER_MAX_SIZE:
-                            buffer = buffer[timestamp_end:]
-                            buffer_offset += timestamp_end  # 更新偏移量
-                            vad_iter.reset_states()
+                        # 每次切分后立即裁剪buffer，避免buffer无限增长导致concat开销恶化
+                        buffer = buffer[timestamp_end:]
+                        buffer_offset += timestamp_end
+                        vad_iter.reset_states()
                         timestamp_start, timestamp_end = None, None
     finally:
         service_registry.client_request_manager.cancel_all()
