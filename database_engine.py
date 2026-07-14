@@ -1,9 +1,13 @@
+import json
 from contextlib import asynccontextmanager
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 from sqlalchemy.orm.decl_api import DeclarativeBase
 
-engine = create_async_engine('sqlite+aiosqlite:///./database.db')
+engine = create_async_engine(
+    'sqlite+aiosqlite:///./database.db',
+    json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False),
+)
 
 
 @event.listens_for(engine.sync_engine, 'connect')
