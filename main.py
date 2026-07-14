@@ -18,6 +18,7 @@ from service.chatbot.interface.chatbot_service import ChatbotService
 from service.chatbot.llm_api_service import LLMAPIService
 from utils.tool_call.tool_manager_registry import init_tool_manager
 from utils.auth import AUTH_API_KEY
+from utils.latency_tracer import tracer
 import service_registry
 
 
@@ -31,7 +32,7 @@ CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
 # 1000秒的音频数据长度，大约30MB
 BUFFER_MAX_SIZE = SAMPLE_RATE * 1000
 
-MAX_SEGMENT_GAP: float = 0.5  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
+MAX_SEGMENT_GAP: float = 0.2  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
 
 
 device = torch.device('cuda')
@@ -84,6 +85,11 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
     # 接受连接并发送招呼语
     await websocket.accept()
     await websocket.send_json({"msg": "welcome to connect"})
+
+    # 预热LLM连接(TCP+TLS握手)，降低本次通话首轮对话的TTFT
+    # fire-and-forget，不阻塞连接建立
+    warmup_task = asyncio.create_task(
+        service_registry.chatbot_service.warmup())
 
     # 给chatbot_service设置session_id，并从数据库中获取对应session的对话上下文
     if session_id is not None:
@@ -148,7 +154,6 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
 
             # 音频数据存入buffer
             buffer = np.concatenate((buffer, waveform))
-            # print(f'{len(buffer)=}')
 
             # 识别时间戳，识别出的timestamp有三种情况
             # 1. {'start': xxx}，识别出了音频片段的开头
@@ -169,10 +174,11 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
                     else:
                         # 转换为相对于当前 buffer 的索引
                         timestamp_start = timestamp["start"] - buffer_offset
-                        # print(f'{timestamp_start=}')
                 # 如果时间戳的key为start，说明检测出了一个片段的末尾
                 elif "end" in timestamp:
                     timestamp_end = timestamp["end"] - buffer_offset
+                    # 打点：VAD检测到语音结束，作为本轮延迟统计的基准点
+                    tracer.start_turn()
             else:
                 # 如果没有时间戳(timestamp is None)
                 # 检查timestamp_start和timestamp_end是否为None
@@ -180,14 +186,14 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
                     # 如果时间差超过MAX_SEGMENT_GAP，将片段发送给asr_worker
                     if (len(buffer) - timestamp_end) / SAMPLE_RATE > MAX_SEGMENT_GAP:
                         chunk = buffer[timestamp_start:timestamp_end]
+                        # 打点：片段送入ASR队列（与vad_end之差即为MAX_SEGMENT_GAP等待的代价）
+                        tracer.mark("segment_queued")
                         await audio_queue.put(chunk)
                         if len(buffer) > BUFFER_MAX_SIZE:
                             buffer = buffer[timestamp_end:]
                             buffer_offset += timestamp_end  # 更新偏移量
                             vad_iter.reset_states()
                         timestamp_start, timestamp_end = None, None
-    except Exception as e:
-        print(f"Main loop error: {e}")
     finally:
         service_registry.client_request_manager.cancel_all()
         service_registry.client_request_manager.set_websocket(None)
@@ -207,7 +213,8 @@ async def asr_worker(audio_queue: asyncio.Queue, asr_content_queue: asyncio.Queu
         try:
             audio = await audio_queue.get()
             asr_result = await service_registry.asr_service.transcribe(audio)
-            print(f'{asr_result=}')
+            # 打点：ASR转写完成
+            tracer.mark("asr_done")
             await asr_content_queue.put(asr_result)
         except asyncio.CancelledError:
             raise
@@ -223,18 +230,37 @@ separate_char_list: List[str] = [
     "！",
 ]
 
+# 首句额外允许的分隔符（逗号等）
+# 首句用更激进的切分让TTS尽早启动，后续句子恢复正常切分以保证语音自然度
+first_sentence_extra_char_list: List[str] = [
+    "，",
+    ",",
+    "、",
+    "；",
+    ";",
+    "：",
+    ":",
+]
+
 
 async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queue: asyncio.Queue[str]):
     while True:
         try:
             asr_content: str = await asr_content_queue.get()
             response_content = ""
+            # 本轮回复是否已切出首句
+            first_sentence_sent = False
             async for content in service_registry.chatbot_service.chat([
                 ChatCompletionContentPartTextParam(
                     type='text', text=asr_content)
             ]):
+                # 打点：收到LLM的首个内容token（TTFT）
+                tracer.mark("llm_first_token", first_only=True)
                 response_content += content.strip()
-                for char in separate_char_list:
+                # 首句允许额外用逗号等切分，让TTS尽早启动
+                char_list = separate_char_list if first_sentence_sent \
+                    else separate_char_list + first_sentence_extra_char_list
+                for char in char_list:
                     index = response_content.rfind(char)
                     # 发现分隔符
                     if index != -1:
@@ -244,14 +270,21 @@ async def chatbot_worker(asr_content_queue: asyncio.Queue[str], llm_content_queu
                         # 如果分隔符是content的最后一个字符
                         # 把response_content放入队列，并置空
                         elif index == len(content) - 1:
+                            # 打点：首个完整句子送入TTS队列
+                            tracer.mark("first_sentence_queued",
+                                        first_only=True)
                             await llm_content_queue.put(response_content)
                             response_content = ''
                         # 如果分隔符不是content的最后一个字符
                         # 取response_content到分隔符为止的字符串（包括分隔符）放入队列
                         # 把response_content赋值为分隔符到末尾（不包括分隔符）的字符串
                         else:
+                            # 打点：首个完整句子送入TTS队列
+                            tracer.mark("first_sentence_queued",
+                                        first_only=True)
                             await llm_content_queue.put(response_content[:index + 1])
                             response_content = response_content[index + 1:]
+                        first_sentence_sent = True
                         # 发现分隔符后，处理完就停止循环
                         break
             # 当大模型回复结束，但response_content不为空时(比如最后一句话没有以分隔符结尾)
@@ -268,12 +301,18 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
     try:
         while True:
             llm_content: str = await llm_content_queue.get()
+            # 打点：TTS开始处理首个句子
+            tracer.mark("tts_start", first_only=True)
             try:
                 async for audio_chunk in service_registry.tts_service.generate_stream(llm_content):
                     await websocket.send_bytes(audio_chunk)
+                    # 打点：首个TTS音频块已发送给客户端
+                    tracer.mark("tts_first_chunk_sent", first_only=True)
             except NotImplementedError:
                 response_audio_bytes = await service_registry.tts_service.generate(llm_content)
                 await websocket.send_bytes(response_audio_bytes)
+                # 打点：首个TTS音频块已发送给客户端
+                tracer.mark("tts_first_chunk_sent", first_only=True)
     except asyncio.CancelledError:
         raise
 
