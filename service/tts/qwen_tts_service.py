@@ -51,6 +51,7 @@ class QwenTTSService(TTSService):
                 for audio_chunk, _, _ in self.model.generate_voice_clone_streaming(
                     text=content, language=self.language,
                     ref_audio=self.ref_audio, ref_text=self.ref_text,
+                    chunk_size=3
                 ):
                     chunk_bytes = audio_chunk.tobytes()
                     loop.call_soon_threadsafe(queue.put_nowait, chunk_bytes)
