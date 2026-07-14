@@ -40,7 +40,7 @@ async def upload_reference_audio(audio: UploadFile, name: str, tags: str):
 
         # 获取vad识别出的时间戳，取前3块
         timestamps = get_speech_timestamps(
-            audio=torch.as_tensor(waveform, device='cuda'), model=service_registry.vad_model)[:3]
+            audio=torch.as_tensor(waveform), model=service_registry.vad_model)[:3]
         if len(timestamps) == 0:
             raise ValueError('No human voice was detected in this audio')
         # 根据时间戳提取音频数据到buffer

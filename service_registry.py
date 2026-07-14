@@ -32,4 +32,3 @@ async def init_service():
         asr_service, tts_service, vad_model = await asyncio.gather(
             f_asr, f_tts, f_vad
         )
-        vad_model = vad_model.to('cuda')  # type: ignore

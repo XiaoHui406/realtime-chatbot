@@ -35,9 +35,6 @@ BUFFER_MAX_SIZE = SAMPLE_RATE * 1000
 MAX_SEGMENT_GAP: float = 0.2  # 片段最大间隔(s)，如果两个片段的间隔小于该时间，则视为同一片段
 
 
-device = torch.device('cuda')
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 初始化各个service
@@ -160,7 +157,7 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
             # 2. {'end': xxx}，识别出了音频片段的结尾
             # 3. None，未识别出时间戳
             timestamp: Dict[str, float | int] | None = vad_iter(
-                x=torch.as_tensor(data=waveform, device=device)
+                x=torch.as_tensor(data=waveform)
             )  # {'start': xxx}, {'end': xxx}
             if timestamp:
                 # 如果时间戳的key为start，说明检测出了一个片段的开头
