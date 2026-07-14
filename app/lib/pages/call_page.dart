@@ -102,6 +102,7 @@ class _CallPageState extends State<CallPage> {
         }
       } catch (_) {}
     } else if (message is List<int>) {
+      print('audio received at ${DateTime.now().millisecondsSinceEpoch / 1000.0}');
       final float32List = bytesToFloat32List(message);
       _playerService.playFloat32Pcm(float32List, 24000);
       setState(() => _statusText = 'Assistant speaking...');

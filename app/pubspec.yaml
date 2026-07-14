@@ -34,7 +34,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   web_socket_channel: ^3.0.0
   record: ^6.2.0
-  just_audio: ^0.9.42
+  flutter_pcm_sound: ^3.3.3
   http: ^1.2.0
   file_picker: ^8.0.0
   geolocator: ^13.0.2
