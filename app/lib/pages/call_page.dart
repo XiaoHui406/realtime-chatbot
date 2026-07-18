@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/config.dart';
@@ -39,7 +39,9 @@ class _CallPageState extends State<CallPage> {
 
   @override
   void dispose() {
-    _disconnect();
+    // dispose期间不能setState：unmount阶段element已defunct，
+    // setState会触发断言并中断本方法，导致后面的资源释放全部不执行
+    _disconnect(updateUi: false);
     _recorderService.dispose();
     _playerService.dispose();
     super.dispose();
@@ -111,43 +113,51 @@ class _CallPageState extends State<CallPage> {
 
   Future<void> _handleLocationRequest(String requestId) async {
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _wsService.sendText(jsonEncode({
-          'type': 'response',
-          'request_id': requestId,
-          'result': {'error': 'Location service is disabled'},
-        }));
-        return;
-      }
-
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          _wsService.sendText(jsonEncode({
-            'type': 'response',
-            'request_id': requestId,
-            'result': {'error': 'Location permission denied'},
-          }));
+          _sendLocationError(requestId, 'Location permission denied');
           return;
         }
       }
       if (permission == LocationPermission.deniedForever) {
-        _wsService.sendText(jsonEncode({
-          'type': 'response',
-          'request_id': requestId,
-          'result': {'error': 'Location permission permanently denied'},
-        }));
+        _sendLocationError(requestId, 'Location permission permanently denied');
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 5),
-        ),
-      );
+      // 不预检isLocationServiceEnabled：部分Android ROM会误报false，
+      // 直接尝试定位，由异常兜底
+      // Android强制使用系统LocationManager，避免无谷歌服务的机型上
+      // fused定位不可用导致失败
+      final locationSettings = defaultTargetPlatform == TargetPlatform.android
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.medium,
+              timeLimit: const Duration(seconds: 5),
+              forceLocationManager: true,
+            )
+          : const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              timeLimit: Duration(seconds: 5),
+            );
+
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: locationSettings,
+        );
+      } catch (e) {
+        // 实时定位失败（超时等）时退回最后一次已知位置
+        Position? lastKnown;
+        try {
+          lastKnown = await Geolocator.getLastKnownPosition();
+        } catch (_) {}
+        if (lastKnown == null) {
+          _sendLocationError(requestId, e.toString());
+          return;
+        }
+        position = lastKnown;
+      }
 
       _wsService.sendText(jsonEncode({
         'type': 'response',
@@ -159,15 +169,19 @@ class _CallPageState extends State<CallPage> {
         },
       }));
     } catch (e) {
-      _wsService.sendText(jsonEncode({
-        'type': 'response',
-        'request_id': requestId,
-        'result': {'error': e.toString()},
-      }));
+      _sendLocationError(requestId, e.toString());
     }
   }
 
-  void _disconnect() {
+  void _sendLocationError(String requestId, String message) {
+    _wsService.sendText(jsonEncode({
+      'type': 'response',
+      'request_id': requestId,
+      'result': {'error': message},
+    }));
+  }
+
+  void _disconnect({bool updateUi = true}) {
     _wsSubscription?.cancel();
     _wsSubscription = null;
     _audioSubscription?.cancel();
@@ -180,7 +194,7 @@ class _CallPageState extends State<CallPage> {
     _recorderService.stop();
     _playerService.stop();
 
-    if (mounted) {
+    if (updateUi && mounted) {
       setState(() {
         _isConnected = false;
         _statusText = 'Disconnected';

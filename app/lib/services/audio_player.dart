@@ -14,15 +14,19 @@ class AudioPlayerService {
   AudioSource? _stream;
   bool _playRequested = false;
   bool _isPlaying = false;
+  bool _disposed = false;
   int _sampleRate = 0;
 
   Future<void> _ensureSetup(int sampleRate) async {
     if (!_soloud.isInitialized) {
       await (_initFuture ??= _soloud.init());
     }
+    // dispose可能发生在等待init的过程中，此时引擎已被释放，不能再创建流
+    if (_disposed) return;
     if (_stream != null && sampleRate == _sampleRate) return;
     // 采样率变化或首次播放时（重新）创建缓冲流
     await _disposeStream();
+    if (_disposed) return;
     _sampleRate = sampleRate;
     _createStream();
   }
@@ -53,24 +57,36 @@ class AudioPlayerService {
   }
 
   Future<void> playFloat32Pcm(Float32List samples, int sampleRate) async {
+    // 挂断时ws回调里的音频块可能仍在途中到达这里：
+    // 若不拦截，dispose(deinit)之后的_ensureSetup会重新init引擎，
+    // 导致音频设备被重新打开且再也无人释放
+    if (_disposed) return;
     await _ensureSetup(sampleRate);
+    if (_disposed || _stream == null) return;
 
     final bytes =
         samples.buffer.asUint8List(samples.offsetInBytes, samples.lengthInBytes);
     try {
-      _soloud.addAudioDataStream(_stream!, bytes);
-    } on SoLoudStreamEndedAlreadyCppException {
-      // 写入总量达到上限导致流被标记结束，重建后继续
-      await _disposeStream();
-      _createStream();
-      _soloud.addAudioDataStream(_stream!, bytes);
-    }
+      try {
+        _soloud.addAudioDataStream(_stream!, bytes);
+      } on SoLoudStreamEndedAlreadyCppException {
+        // 写入总量达到上限导致流被标记结束，重建后继续
+        await _disposeStream();
+        if (_disposed) return;
+        _createStream();
+        _soloud.addAudioDataStream(_stream!, bytes);
+      }
 
-    // 首次喂数据后开始播放（released类型的流只能play一次）；
-    // 之后缓冲耗尽/恢复由引擎自动暂停/继续
-    if (!_playRequested) {
-      _playRequested = true;
-      await _soloud.play(_stream!);
+      // 首次喂数据后开始播放（released类型的流只能play一次）；
+      // 之后缓冲耗尽/恢复由引擎自动暂停/继续
+      if (!_playRequested) {
+        _playRequested = true;
+        await _soloud.play(_stream!);
+      }
+    } on SoLoudException {
+      // dispose与本方法在await间隙并发时，引擎/流可能已释放，静默忽略
+      if (!_disposed) rethrow;
+      return;
     }
 
     if (!_isPlaying) {
@@ -84,6 +100,7 @@ class AudioPlayerService {
   }
 
   void stop() {
+    if (_disposed) return;
     // 丢弃未播放的缓冲数据，播放随即因缓冲耗尽而静音；
     // 流保持存活，下一轮数据到达后自动继续播放
     final stream = _stream;
@@ -112,21 +129,24 @@ class AudioPlayerService {
   }
 
   Future<void> dispose() async {
+    // 先置位，阻止在途的playFloat32Pcm在deinit后重新init引擎
+    _disposed = true;
     final pendingInit = _initFuture;
     _initFuture = null;
     _stream = null;
     _playRequested = false;
     _isPlaying = false;
     if (pendingInit != null) {
+      // 等待可能仍在进行的init完成，避免与deinit交错
       try {
         await pendingInit;
-      } catch (_) {
-        return;
-      }
+      } catch (_) {}
     }
     if (_soloud.isInitialized) {
-      // 同步停止引擎并释放全部资源（含缓冲流）
-      _soloud.deinit();
+      try {
+        // 同步停止引擎并释放全部资源（含缓冲流和音频设备）
+        _soloud.deinit();
+      } catch (_) {}
     }
   }
 }
