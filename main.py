@@ -19,6 +19,7 @@ from service.chatbot.llm_api_service import LLMAPIService
 from utils.tool_call.tool_manager_registry import init_tool_manager
 from utils.auth import AUTH_API_KEY
 from utils.latency_tracer import tracer
+from utils.text_sanitizer import sanitize_for_tts
 import service_registry
 
 
@@ -29,7 +30,9 @@ CHUNK_DURATION: float = 0.032  # 前端发送的音频时长(s)
 # 每次发送的音频要满足16kHz采样率，16bit位深，1024byte大小
 CHUNK_SIZE: int = int(SAMPLE_RATE * CHUNK_DURATION)
 
-MAX_SEGMENT_GAP: float = 0.2  # 片段最大间隔(s)
+# 端点静音时长(ms)：静音持续超过该时长，VAD才发出end事件认为一句话结束
+# 其间的短停顿由VAD内部自动合并进同一片段
+MIN_SILENCE_DURATION_MS: int = 200
 
 # 空闲buffer上限：无语音活动时buffer超过此长度则裁剪，防止静音连接导致的无限增长
 IDLE_BUFFER_MAX_S = 30  # 30秒静音
@@ -98,7 +101,9 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
     service_registry.client_request_manager.set_websocket(websocket)
 
     buffer = np.array([], dtype=np.float32)  # 存储收到的音频数据
-    buffer_offset = 0  # 跟踪 buffer 的起始偏移量
+    # buffer[0]在VAD绝对采样坐标系中的索引（即累计被裁剪掉的样本数）
+    # 不变量：buffer_offset + len(buffer) == VAD已处理的总样本数
+    buffer_offset = 0
 
     # 存放VAD识别出的音频片段数据
     audio_queue = asyncio.Queue()
@@ -113,12 +118,14 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
         chatbot_worker(asr_content_queue, llm_content_queue))
     tts_task = asyncio.create_task(tts_worker(websocket, llm_content_queue))
     # 创建VAD迭代器
-    vad_iter = VADIterator(model=service_registry.vad_model)
+    vad_iter = VADIterator(
+        model=service_registry.vad_model,
+        min_silence_duration_ms=MIN_SILENCE_DURATION_MS,
+    )
 
-    # 存放VAD识别出的时间戳(实际为buffer的索引，数值上等于SAMPLE_RATE * 时间戳)
-    # start和end共同指出一个音频片段
+    # 存放VAD识别出的片段起点(VAD绝对采样索引，数值上等于SAMPLE_RATE * 时间戳)
+    # VAD全程连续计数不重置，取片段时通过buffer_offset换算为buffer索引
     timestamp_start: int | float | None = None
-    timestamp_end: int | float | None = None
 
     try:
         while True:
@@ -158,55 +165,45 @@ async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api
                 trim_at = len(buffer) - IDLE_BUFFER_KEEP_S * SAMPLE_RATE
                 buffer = buffer[trim_at:]
                 buffer_offset += trim_at
-                vad_iter.reset_states()
 
             # 识别时间戳，识别出的timestamp有三种情况
             # 1. {'start': xxx}，识别出了音频片段的开头
-            # 2. {'end': xxx}，识别出了音频片段的结尾
+            # 2. {'end': xxx}，识别出了音频片段的结尾(静音已持续MIN_SILENCE_DURATION_MS)
             # 3. None，未识别出时间戳
             timestamp: Dict[str, float | int] | None = vad_iter(
                 x=torch.as_tensor(data=waveform)
             )  # {'start': xxx}, {'end': xxx}
             if timestamp:
-                # 如果时间戳的key为start，说明检测出了一个片段的开头
+                # 检测出片段开头，记录起点
                 if "start" in timestamp:
-                    # 如果此时timestamp_start和timestamp_end都不是None
-                    # 代表之前检测到一个片段，但和当前片段的时间差不超过MAX_SEGMENT_GAP
-                    # 因此将两个片段视为同一个，将上一个片段的timestamp_end置为None
-                    if timestamp_start and timestamp_end:
-                        if (timestamp['start'] - timestamp_end) / SAMPLE_RATE <= MAX_SEGMENT_GAP:
-                            timestamp_end = None
-                    else:
-                        # 转换为相对于当前 buffer 的索引
-                        timestamp_start = timestamp["start"] - buffer_offset
-                # 如果时间戳的key为start，说明检测出了一个片段的末尾
-                elif "end" in timestamp:
-                    timestamp_end = timestamp["end"] - buffer_offset
+                    timestamp_start = timestamp["start"]
+                # 检测出片段结尾，立即切分并送入ASR
+                # 短停顿的合并已由VAD内部完成，end事件发出即代表一句话结束
+                elif "end" in timestamp and timestamp_start is not None:
                     # 打点：VAD检测到语音结束，作为本轮延迟统计的基准点
                     tracer.start_turn()
-            else:
-                # 如果没有时间戳(timestamp is None)
-                # 检查timestamp_start和timestamp_end是否为None
-                if timestamp_start and timestamp_end:
-                    # 如果时间差超过MAX_SEGMENT_GAP，将片段发送给asr_worker
-                    if (len(buffer) - timestamp_end) / SAMPLE_RATE > MAX_SEGMENT_GAP:
-                        chunk = buffer[timestamp_start:timestamp_end]
-                        # 打点：片段送入ASR队列（与vad_end之差即为MAX_SEGMENT_GAP等待的代价）
-                        tracer.mark("segment_queued")
-                        await audio_queue.put(chunk)
-                        # 每次切分后立即裁剪buffer，避免buffer无限增长导致concat开销恶化
-                        buffer = buffer[timestamp_end:]
-                        buffer_offset += timestamp_end
-                        vad_iter.reset_states()
-                        timestamp_start, timestamp_end = None, None
+                    # 绝对坐标换算为buffer索引后取出片段
+                    cut = timestamp["end"] - buffer_offset
+                    chunk = buffer[timestamp_start - buffer_offset:cut]
+                    # 打点：片段送入ASR队列
+                    tracer.mark("segment_queued")
+                    await audio_queue.put(chunk)
+                    # 每次切分后立即裁剪buffer，避免buffer无限增长导致concat开销恶化
+                    buffer = buffer[cut:]
+                    buffer_offset += cut
+                    timestamp_start = None
     finally:
         service_registry.client_request_manager.cancel_all()
         service_registry.client_request_manager.set_websocket(None)
-        asr_task.cancel()
-        try:
-            await asr_task
-        except asyncio.CancelledError:
-            pass
+        # 取消所有后台任务并等待其退出
+        # 若不清理，连接断开后悬挂的任务失去强引用，会在GC时
+        # 报"Task was destroyed but it is pending!"
+        tasks = (warmup_task, asr_task, chatbot_task, tts_task)
+        for task in tasks:
+            task.cancel()
+        # return_exceptions=True会一并取回各任务的异常(含CancelledError)
+        # 避免产生"Task exception was never retrieved"告警
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def asr_worker(audio_queue: asyncio.Queue, asr_content_queue: asyncio.Queue[str]):
@@ -306,6 +303,11 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
     try:
         while True:
             llm_content: str = await llm_content_queue.get()
+            # 送入TTS前清理markdown标记，避免朗读出星号、列表序号等符号
+            # (此时句子是完整文本，跨delta的成对标记在这里能被正确匹配)
+            llm_content = sanitize_for_tts(llm_content)
+            if not llm_content:
+                continue
             # 打点：TTS开始处理首个句子
             tracer.mark("tts_start", first_only=True)
             try:

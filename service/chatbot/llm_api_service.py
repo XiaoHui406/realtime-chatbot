@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List
 
@@ -20,35 +19,11 @@ from openai.types.chat.chat_completion_content_part_param import ChatCompletionC
 from service.chatbot.interface.chatbot_service import ChatbotService
 from utils.chatbot_session_utils import get_session_messages
 from utils.latency_tracer import tracer
+from utils.text_sanitizer import strip_markdown
 from utils.tool_call import tool_manager_registry as tool_manager_reg
 
 from database_engine import get_database
 from model.chatbot_session import ChatBotSession, ChatbotMessage, ChatbotToolCall
-
-
-_EMOJI_RE = re.compile(
-    "["
-    "\U0001F600-\U0001F9FF"
-    "\U0001FA00-\U0001FA6F"
-    "\U0001FA70-\U0001FAFF"
-    "\U00002702-\U000027B0"
-    "\U00002600-\U000027BF"
-    "\U0001F300-\U0001F5FF"
-    "\U0001F680-\U0001F6FF"
-    "\U0001F1E0-\U0001F1FF"
-    "]+",
-    flags=re.UNICODE,
-)
-
-
-def _strip_chunk(text: str) -> str:
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'`(.+?)`', r'\1', text)
-    text = re.sub(r'~~(.+?)~~', r'\1', text)
-    text = re.sub(r'^#{1,6}\s', '', text, flags=re.MULTILINE)
-    text = _EMOJI_RE.sub('', text)
-    return text
 
 
 class LLMAPIService(ChatbotService):
@@ -128,7 +103,10 @@ class LLMAPIService(ChatbotService):
                     choice = chunk.choices[0]
                     delta = choice.delta
                     if len(response_content_list) > 0 and delta.tool_calls:
-                        response_content = ''.join(response_content_list)
+                        # 完整文本上去除markdown后再入库
+                        # (流式delta会把成对标记拆开，只能在拼接后的全文上处理)
+                        response_content = strip_markdown(
+                            ''.join(response_content_list))
                         assistant_msg = ChatCompletionAssistantMessageParam(
                             role='assistant', content=response_content
                         )
@@ -137,10 +115,9 @@ class LLMAPIService(ChatbotService):
                         response_content_list = []
 
                     if delta.content:
-                        filtered = _strip_chunk(delta.content)
-                        if filtered:
-                            yield filtered
-                            response_content_list.append(filtered)
+                        # 原样流式下发，markdown清理由下游在完整句子上执行
+                        yield delta.content
+                        response_content_list.append(delta.content)
 
                     elif delta.tool_calls:
                         for tool_call in delta.tool_calls:
@@ -181,7 +158,9 @@ class LLMAPIService(ChatbotService):
 
                     elif choice.finish_reason == 'stop':
                         if response_content_list:
-                            response_content = ''.join(response_content_list)
+                            # 完整文本上去除markdown后再入库
+                            response_content = strip_markdown(
+                                ''.join(response_content_list))
                             assistant_msg = ChatCompletionAssistantMessageParam(
                                 role="assistant", content=response_content
                             )
