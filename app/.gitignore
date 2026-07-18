@@ -39,6 +39,12 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Live2D: SDK files must be downloaded by the user (see assets/live2d/README.md)
+assets/live2d/live2dcubismcore.min.js
+assets/live2d/live2dcubismcore.min.js.mem
+assets/live2d/model/
+assets/live2d/dist/
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
