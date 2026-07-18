@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'config.dart';
 import 'settings_service.dart';
 
 class WebSocketService {
@@ -12,12 +12,12 @@ class WebSocketService {
 
   Future<void> connect(String url) async {
     final apiKey = SettingsService().apiKey;
-    var fullUrl = url;
-    if (apiKey.isNotEmpty) {
-      final separator = url.contains('?') ? '&' : '?';
-      fullUrl = '$url${separator}api_key=$apiKey';
-    }
-    _channel = WebSocketChannel.connect(Uri.parse(fullUrl));
+    // api key通过Authorization header传递，与REST接口一致，
+    // 避免出现在URL中被服务端访问日志记录（仅原生端支持，不兼容web）
+    _channel = IOWebSocketChannel.connect(
+      Uri.parse(url),
+      headers: apiKey.isNotEmpty ? {'Authorization': 'Bearer $apiKey'} : null,
+    );
     await _channel!.ready;
   }
 

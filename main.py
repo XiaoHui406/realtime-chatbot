@@ -77,11 +77,14 @@ app.include_router(chatbot_session_router)
 
 
 @app.websocket("/realtime-chat")
-async def realtime_chat(websocket: WebSocket, session_id: int | None = None, api_key: str = ""):
-    # AUTH_API_KEY身份验证
-    if AUTH_API_KEY and api_key != AUTH_API_KEY:
-        await websocket.close(code=4001, reason="Unauthorized")
-        return
+async def realtime_chat(websocket: WebSocket, session_id: int | None = None):
+    # AUTH_API_KEY身份验证：与REST接口一致，从Authorization header读取
+    # 不使用查询参数传递，避免key进入访问日志
+    if AUTH_API_KEY:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header != f"Bearer {AUTH_API_KEY}":
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
 
     # 接受连接并发送招呼语
     await websocket.accept()
