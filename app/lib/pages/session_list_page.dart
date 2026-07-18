@@ -36,8 +36,49 @@ class _SessionListPageState extends State<SessionListPage> {
   }
 
   Future<void> _createSession() async {
+    final titleController = TextEditingController();
+    final promptController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建对话'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '对话名称',
+                hintText: '可留空',
+              ),
+            ),
+            TextField(
+              controller: promptController,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '初始提示词',
+                hintText: '可留空，如角色设定',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('创建')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final title = titleController.text.trim();
+    final prompt = promptController.text.trim();
     try {
-      final session = await _api.createSession();
+      final session = await _api.createSession(
+        title: title.isEmpty ? null : title,
+        initialPrompt: prompt.isEmpty ? null : prompt,
+      );
       if (mounted) {
         await Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => ChatDetailPage(sessionId: session.id, title: session.title)),
