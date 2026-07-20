@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "build": "vite build && node copy_resources.js",
+    "build": "vite build && node copy_resources.js && node restore_placeholders.js",
     "serve": "vite preview --port 5000 --host",
     "clean": "rimraf dist"
   },
