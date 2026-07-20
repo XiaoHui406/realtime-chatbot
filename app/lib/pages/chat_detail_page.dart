@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/live2d_server.dart';
 import '../services/settings_service.dart';
 import 'call_page.dart';
 import 'live2d_call_page.dart';
@@ -40,7 +41,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
   Future<void> _startCall() async {
     final mode = SettingsService().callMode;
-    if (mode == CallMode.live2d) {
+    final useLive2D =
+        mode == CallMode.live2d && await Live2DServer.isDistAvailable();
+    if (useLive2D) {
       await Navigator.of(context).push(
         MaterialPageRoute(
             builder: (_) =>

@@ -131,6 +131,16 @@ class Live2DServer {
     }
   }
 
+  static Future<bool> isDistAvailable() async {
+    try {
+      final manifestJson = await rootBundle.loadString('AssetManifest.json');
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+      return manifest.containsKey('assets/live2d/dist/Core/live2dcubismcore.js');
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<int> start() async {
     if (_docRoot.isEmpty) {
       throw StateError('Live2D dist directory not found');

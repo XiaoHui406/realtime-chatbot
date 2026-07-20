@@ -42,7 +42,6 @@ app.*.map.json
 # Live2D: SDK must be downloaded by user (see assets/live2d/README.md)
 assets/live2d/CubismSdkForWeb-5-r.5/
 assets/live2d/model/
-assets/live2d/dist/
 
 # Android Studio will place build artifacts here
 /android/app/debug

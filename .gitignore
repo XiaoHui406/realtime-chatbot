@@ -2,7 +2,7 @@
 __pycache__/
 *.py[oc]
 build/
-dist/
+/dist/
 wheels/
 *.egg-info
 
@@ -19,6 +19,5 @@ config.json
 
 app/assets/live2d/CubismSdkForWeb-5-r.5/
 app/assets/live2d/model/
-app/assets/live2d/dist/
 
 .vscode/
