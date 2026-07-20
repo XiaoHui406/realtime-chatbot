@@ -41,6 +41,20 @@ dist/
 └── assets/index.js               # 编译后的应用 JS
 ```
 
+### 缓存清理
+
+首次运行 Flutter 应用时，`dist/` 文件会被缓存到应用数据目录。重新构建 `dist/` 后，需清理缓存才能生效：
+
+**Windows**：
+```powershell
+Remove-Item -Recurse -Force "$env:APPDATA\com.example\app\live2d"
+```
+
+**Android**：
+```bash
+adb shell run-as com.example.app rm -r /data/data/com.example.app/files/live2d
+```
+
 ## 使用其他版本的 SDK
 
 本项目默认面向 **Cubism SDK for Web 5-r.5**。若使用不同版本，需修改以下文件中出现的版本号（假设新版本目录名为 `CubismSdkForWeb-6-r.1`）：
