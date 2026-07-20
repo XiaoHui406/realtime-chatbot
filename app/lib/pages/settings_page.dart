@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
+import 'live2d_model_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -12,13 +13,15 @@ class _SettingsPageState extends State<SettingsPage> {
   final _controller = TextEditingController();
   bool _obscureText = true;
   bool _hasApiKey = false;
+  CallMode _callMode = CallMode.normal;
 
   @override
   void initState() {
     super.initState();
-    final apiKey = SettingsService().apiKey;
-    _controller.text = apiKey;
-    _hasApiKey = apiKey.isNotEmpty;
+    final settings = SettingsService();
+    _controller.text = settings.apiKey;
+    _hasApiKey = settings.apiKey.isNotEmpty;
+    _callMode = settings.callMode;
   }
 
   @override
@@ -38,6 +41,11 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _setCallMode(CallMode mode) async {
+    await SettingsService().setCallMode(mode);
+    if (mounted) setState(() => _callMode = mode);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -48,6 +56,40 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const Text('通话模式',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          const Text('选择点击"通话"时进入的界面',
+              style: TextStyle(color: Colors.grey, fontSize: 13)),
+          const SizedBox(height: 12),
+          SegmentedButton<CallMode>(
+            segments: const [
+              ButtonSegment(
+                  value: CallMode.normal,
+                  label: Text('普通通话'),
+                  icon: Icon(Icons.call)),
+              ButtonSegment(
+                  value: CallMode.live2d,
+                  label: Text('Live2D'),
+                  icon: Icon(Icons.person)),
+            ],
+            selected: {_callMode},
+            onSelectionChanged: (v) => _setCallMode(v.first),
+          ),
+          if (_callMode == CallMode.live2d) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const Live2DModelPage()),
+              ),
+              icon: const Icon(Icons.manage_accounts, size: 20),
+              label: const Text('管理 Live2D 模型'),
+            ),
+          ],
+          const SizedBox(height: 32),
+          const Divider(),
+          const SizedBox(height: 16),
           Row(
             children: [
               Icon(

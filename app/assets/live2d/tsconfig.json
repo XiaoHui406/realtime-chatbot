@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "strictNullChecks": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@framework/*": ["CubismSdkForWeb-5-r.5/Framework/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "CubismSdkForWeb-5-r.5/Core/live2dcubismcore.d.ts"]
+}

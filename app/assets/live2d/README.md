@@ -1,64 +1,83 @@
-# Live2D Assets Setup
+# Live2D WebView 前端
 
-`dist/` 目录由 Cubism SDK for Web 的 Demo 项目编译生成，**不在 Git 仓库中**（已 gitignore）。
+基于 Cubism SDK for Web 5-r.5 官方 Demo 构建的 Live2D 渲染层，运行在 Flutter WebView 中。
 
-## 编译步骤
+## 前置条件
 
 ### 1. 下载 Cubism SDK for Web
 
-https://www.live2d.com/en/sdk/download/web/
+从 [Live2D 官网](https://www.live2d.com/download/cubism-sdk/) 下载 **Cubism SDK for Web**，将解压后的整个目录放置于此：
 
-解压到任意位置，例如 `E:\CubismSdkForWeb-5-r.5`。
+```
+assets/live2d/CubismSdkForWeb-5-r.5/
+├── Core/                    # 引擎核心（专有许可）
+├── Framework/               # TypeScript 框架（开放许可）
+├── Samples/                 # 示例项目（开放许可）
+├── LICENSE.md               # 许可证说明
+├── NOTICE.md                # 第三方声明
+└── ...
+```
 
-### 2. 安装依赖并编译
+### 2. 安装 Node.js 依赖
 
-```powershell
-cd CubismSdkForWeb-5-r.5\Samples\TypeScript\Demo
+```bash
+cd app/assets/live2d
 npm install
-node copy_resources.js
-npx vite build --mode development
 ```
 
-### 3. 复制到项目
+## 构建
 
-```powershell
-Remove-Item -Recurse -Force app\assets\live2d\dist
-Copy-Item -Recurse CubismSdkForWeb-5-r.5\Samples\TypeScript\Demo\dist\* app\assets\live2d\dist\
+```bash
+npm run build
 ```
 
-### 4. 验证
-
-```powershell
-cd app\assets\live2d\dist
-python -m http.server 8080
-```
-
-浏览器打开 `http://localhost:8080` 应能看到 Hiyori 模型。
-
-## 最终目录结构
+构建产物输出到 `dist/` 目录：
 
 ```
-assets/live2d/
-├── README.md
-└── dist/                    ← 🔒 编译产物 (已 gitignore)
-    ├── index.html
-    ├── assets/
-    │   └── index-*.js
-    ├── Core/
-    │   └── live2dcubismcore.js
-    ├── Framework/
-    │   └── Shaders/
-    └── Resources/
-        └── Hiyori/          ← 模型文件
+dist/
+├── index.html                    # WebView 入口
+├── Core/                         # Cubism Core JS (live2dcubismcore.js)
+├── Framework/Shaders/WebGL/      # WebGL2 shader 文件
+└── assets/index.js               # 编译后的应用 JS
 ```
 
-## 源码修改说明
+## 使用其他版本的 SDK
 
-Demo 源码已做以下修改（修改后的文件位于 SDK 目录中）：
+本项目默认面向 **Cubism SDK for Web 5-r.5**。若使用不同版本，需修改以下文件中出现的版本号（假设新版本目录名为 `CubismSdkForWeb-6-r.1`）：
 
-- `lappdefine.ts`: 只加载 Hiyori 模型，关闭调试日志
-- `lappview.ts`: 移除齿轮图标和背景图片
-- `lappdelegate.ts`: 暴露 `getLive2DManager()` 方法
-- `lapplive2dmanager.ts`: 增加参数覆盖机制，暴露参数和表情控制接口
-- `main.ts`: 增加 `Live2DBridge` 全局 API（嘴型、眼睛、表情、动作控制）
-- `index.html`: 增加状态栏 UI，透明背景
+| 文件 | 路径 | 修改内容 |
+|------|------|---------|
+| `tsconfig.json` | `paths` 和 `include` | `CubismSdkForWeb-5-r.5` → 新目录名 |
+| `vite.config.mts` | `sdkPath` 变量 | `CubismSdkForWeb-5-r.5` → 新目录名 |
+| `copy_resources.js` | `sdkPath` 变量 | `CubismSdkForWeb-5-r.5` → 新目录名 |
+| `.gitignore`（根目录 + `app/` 两处） | ignore 规则 | `CubismSdkForWeb-5-r.5` → 新目录名 |
+
+以上任一路径配置错误会导致构建失败（模块找不到）。其余文件（`src/` 下的 TS 源码、`pubspec.yaml`、`live2d_server.dart`）与 SDK 版本无关，无需修改。
+
+## 许可证
+
+本模块基于官方 Demo 修改而来，依赖以下 Live2D 组件：
+
+| 组件 | 许可 | 说明 |
+|------|------|------|
+| **Cubism Core** (`live2dcubismcore.js`) | [专有软件许可](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html) | 不可修改分发，由 SDK 原样提供 |
+| **Framework** | [开放软件许可](https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html) | 允许修改和商用 |
+| **Samples** | 同上 | Demo 代码可自由修改使用 |
+| **示例模型** (Haru, Mao 等) | [免费素材许可](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) | 仅限集成到应用中展示，不可单独再分发 |
+
+**商业使用注意事项**：年销售额超过 1000 万日元的企业需另行获取 [Cubism SDK 发布许可](https://www.live2d.com/en/download/cubism-sdk/release-license/)。
+
+完整的许可证文本参见 SDK 目录下的 `LICENSE.md`、`NOTICE.md` 及各组件根目录下的相关文件。
+
+## Live2DBridge API
+
+| 方法 | 参数 | 说明 |
+|------|------|------|
+| `isReady()` | - | 模型是否加载完成，返回 `boolean` |
+| `setMouthOpen(v)` | `number` 0~1 | 设置口型开合度 |
+| `setEyeOpen(v)` | `number` 0~1 | 设置眼睛开合度 |
+| `setExpression(name)` | `string` | 播放表情（名称来自模型定义） |
+| `startMotion(group, index)` | `string`, `number` | 播放动作 |
+| `switchModel(path)` | `string` | 切换模型，传入模型目录路径 |
+| `getExpressionNames()` | - | 获取可用表情名列表 |
+| `getMotionGroups()` | - | 获取可用动作组列表 |

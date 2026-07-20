@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live2D</title>
+  <style>
+    html, body {
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000000;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #l2d-status {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      color: rgba(255,255,255,0.6);
+      font-size: 12px;
+      font-family: monospace;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+  <script src="./Core/live2dcubismcore.js"></script>
+  <script type="module" src="./src/main.ts"></script>
+</head>
+<body>
+  <div id="l2d-status">loading...</div>
+</body>
+</html>

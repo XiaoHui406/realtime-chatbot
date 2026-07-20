@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/settings_service.dart';
 import 'call_page.dart';
-import 'live2d_demo_page.dart';
+import 'live2d_call_page.dart';
 
 class ChatDetailPage extends StatefulWidget {
   final int sessionId;
@@ -38,10 +39,19 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   Future<void> _startCall() async {
-    // TODO: 改回 CallPage 当 Live2D 整合完成
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const Live2DDemoPage()),
-    );
+    final mode = SettingsService().callMode;
+    if (mode == CallMode.live2d) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+            builder: (_) =>
+                Live2DCallPage(sessionId: widget.sessionId)),
+      );
+    } else {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+            builder: (_) => CallPage(sessionId: widget.sessionId)),
+      );
+    }
     _loadMessages();
   }
 

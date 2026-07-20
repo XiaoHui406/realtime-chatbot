@@ -17,8 +17,7 @@ test.py
 *.ipynb
 config.json
 
-app/assets/live2d/live2dcubismcore.min.js
-app/assets/live2d/live2dcubismcore.min.js.mem
+app/assets/live2d/CubismSdkForWeb-5-r.5/
 app/assets/live2d/model/
 app/assets/live2d/dist/
 
