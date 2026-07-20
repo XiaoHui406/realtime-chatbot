@@ -328,4 +328,4 @@ async def tts_worker(websocket: WebSocket, llm_content_queue: asyncio.Queue[str]
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", reload=True)
+    uvicorn.run("main:app", reload=True, reload_excludes=["app/*"])
