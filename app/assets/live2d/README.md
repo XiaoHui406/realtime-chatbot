@@ -41,6 +41,8 @@ dist/
 └── assets/index.js               # 编译后的应用 JS
 ```
 
+> **注意**：如果此前在未安装 SDK 的情况下运行过 Flutter，Flutter 可能缓存了不含 SDK 的旧资源清单。首次构建完成后务必执行 `flutter clean` 再 `flutter run`，否则应用无法检测到 Live2D。
+
 ### 缓存清理
 
 首次运行 Flutter 应用时，`dist/` 文件会被缓存到应用数据目录。重新构建 `dist/` 后，需清理缓存才能生效：

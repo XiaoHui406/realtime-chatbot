@@ -133,9 +133,8 @@ class Live2DServer {
 
   static Future<bool> isDistAvailable() async {
     try {
-      final manifestJson = await rootBundle.loadString('AssetManifest.json');
-      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
-      return manifest.containsKey('assets/live2d/dist/Core/live2dcubismcore.js');
+      await rootBundle.load('assets/live2d/dist/Core/live2dcubismcore.js');
+      return true;
     } catch (_) {
       return false;
     }
