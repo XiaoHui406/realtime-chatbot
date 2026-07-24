@@ -8,6 +8,8 @@ import '../services/ws_service.dart';
 import '../services/audio_recorder.dart';
 import '../services/audio_player.dart';
 import '../services/wav_utils.dart';
+import '../services/screen_capturer.dart';
+import '../services/photo_capturer.dart';
 
 class CallPage extends StatefulWidget {
   final int sessionId;
@@ -24,6 +26,7 @@ class _CallPageState extends State<CallPage> {
   final _playerService = AudioPlayerService();
 
   bool _isConnected = false;
+  bool _requestInProgress = false;
   String _statusText = 'Connecting...';
   StreamSubscription? _wsSubscription;
   StreamSubscription? _audioSubscription;
@@ -68,10 +71,12 @@ class _CallPageState extends State<CallPage> {
       _wsSubscription = _wsService.stream?.listen(
         _onWsMessage,
         onError: (error) {
+          if (_requestInProgress) return;
           setState(() => _statusText = 'Error: $error');
           _disconnect();
         },
         onDone: () {
+          if (_requestInProgress) return;
           setState(() => _statusText = 'Disconnected');
           _disconnect();
         },
@@ -97,9 +102,20 @@ class _CallPageState extends State<CallPage> {
       try {
         final json = jsonDecode(message);
         if (json is Map<String, dynamic>) {
-          if (json['type'] == 'request' && json['action'] == 'get_location') {
-            _handleLocationRequest(json['request_id'] as String);
-            return;
+          if (json['type'] == 'request') {
+            final action = json['action'] as String?;
+            final requestId = json['request_id'] as String;
+            switch (action) {
+              case 'get_location':
+                _handleLocationRequest(requestId);
+                return;
+              case 'screenshot':
+                _handleScreenshotRequest(requestId);
+                return;
+              case 'capture_photo':
+                _handleCameraRequest(requestId);
+                return;
+            }
           }
         }
       } catch (_) {}
@@ -117,12 +133,12 @@ class _CallPageState extends State<CallPage> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          _sendLocationError(requestId, 'Location permission denied');
+          _sendRequestError(requestId, 'Location permission denied');
           return;
         }
       }
       if (permission == LocationPermission.deniedForever) {
-        _sendLocationError(requestId, 'Location permission permanently denied');
+        _sendRequestError(requestId, 'Location permission permanently denied');
         return;
       }
 
@@ -153,7 +169,7 @@ class _CallPageState extends State<CallPage> {
           lastKnown = await Geolocator.getLastKnownPosition();
         } catch (_) {}
         if (lastKnown == null) {
-          _sendLocationError(requestId, e.toString());
+          _sendRequestError(requestId, e.toString());
           return;
         }
         position = lastKnown;
@@ -169,16 +185,85 @@ class _CallPageState extends State<CallPage> {
         },
       }));
     } catch (e) {
-      _sendLocationError(requestId, e.toString());
+      _sendRequestError(requestId, e.toString());
     }
   }
 
-  void _sendLocationError(String requestId, String message) {
+  void _sendRequestError(String requestId, String message) {
     _wsService.sendText(jsonEncode({
       'type': 'response',
       'request_id': requestId,
       'result': {'error': message},
     }));
+  }
+
+  Future<void> _handleScreenshotRequest(String requestId) async {
+    try {
+      _requestInProgress = true;
+      final images = await ScreenCapturer.pick(context);
+      _requestInProgress = false;
+
+      if (!_wsService.isConnected) {
+        await _reconnect();
+      }
+
+      if (images == null || images.isEmpty) {
+        _sendRequestError(requestId, 'No images selected');
+        return;
+      }
+      _wsService.sendText(jsonEncode({
+        'type': 'response',
+        'request_id': requestId,
+        'result': {
+          'images': images,
+          'format': 'jpeg',
+          'message': 'Selected ${images.length} image(s)',
+        },
+      }));
+    } catch (e) {
+      _requestInProgress = false;
+      _sendRequestError(requestId, e.toString());
+    }
+  }
+
+  Future<void> _handleCameraRequest(String requestId) async {
+    try {
+      _requestInProgress = true;
+      final base64 = await PhotoCapturer.capture(context);
+      _requestInProgress = false;
+
+      if (!_wsService.isConnected) {
+        await _reconnect();
+      }
+
+      if (base64 == null) {
+        _sendRequestError(requestId, 'Camera capture cancelled or failed');
+        return;
+      }
+      _wsService.sendText(jsonEncode({
+        'type': 'response',
+        'request_id': requestId,
+        'result': {
+          'image_base64': base64,
+          'format': 'jpeg',
+          'message': 'Photo captured',
+        },
+      }));
+    } catch (e) {
+      _requestInProgress = false;
+      _sendRequestError(requestId, e.toString());
+    }
+  }
+
+  Future<void> _reconnect() async {
+    _wsSubscription?.cancel();
+    _wsSubscription = null;
+    _audioSubscription?.cancel();
+    _audioSubscription = null;
+    _recorderService.stop();
+    _playerService.stop();
+    _wsService.disconnect();
+    await _connect();
   }
 
   void _disconnect({bool updateUi = true}) {

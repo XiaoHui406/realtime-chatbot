@@ -45,6 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to take photos for AI assistant.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to select images for AI analysis.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs your location to provide location-based responses.</string>
 </dict>
