@@ -9,12 +9,15 @@ from service.asr.interface.asr_service import ASRService
 
 
 class SenseVoiceService(ASRService):
-    def __init__(self) -> None:
+    def __init__(self, model: funasr.AutoModel | None = None) -> None:
         try:
-            self.model = funasr.AutoModel(
-                model='iic/SenseVoiceSmall',
-                device='cuda:0'
-            )
+            if model:
+                self.model = model
+            else:
+                self.model = funasr.AutoModel(
+                    model='iic/SenseVoiceSmall',
+                    device='cuda:0'
+                )
         except NotImplementedError:
             self.model = funasr.AutoModel(
                 model='iic/SenseVoiceSmall',

@@ -13,7 +13,7 @@ from service.tts.interface.tts_service import TTSService
 
 class QwenTTSService(TTSService):
 
-    def __init__(self) -> None:
+    def __init__(self, model: FasterQwen3TTS | None = None) -> None:
         self.ref_text = (
             "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up "
             "reinforcement learning atop LLMs. If we're actually close to a human-like learner, then this whole approach "
@@ -21,9 +21,12 @@ class QwenTTSService(TTSService):
         )
         self.ref_audio = './ref_audio.wav'
         self.language = 'Chinese'
-        self.model = FasterQwen3TTS.from_pretrained(
-            model_name='Qwen/Qwen3-TTS-12Hz-0.6B-Base'
-        )
+        if model:
+            self.model = model
+        else:
+            self.model = FasterQwen3TTS.from_pretrained(
+                model_name='Qwen/Qwen3-TTS-12Hz-0.6B-Base'
+            )
         self.model.generate_voice_clone(
             text='你好', language=self.language,
             ref_audio=self.ref_audio, ref_text=self.ref_text)

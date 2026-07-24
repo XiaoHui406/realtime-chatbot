@@ -7,8 +7,11 @@ from service.asr.interface.asr_service import ASRService
 
 
 class WhisperService(ASRService):
-    def __init__(self) -> None:
-        self.model = WhisperModel('small')
+    def __init__(self, model: WhisperModel | None = None) -> None:
+        if model:
+            self.model = model
+        else:
+            self.model = WhisperModel('small')
 
     async def transcribe(
         self,
@@ -20,7 +23,6 @@ class WhisperService(ASRService):
             audio=chunk,
             initial_prompt='以下是简体中文的句子。',
             language='zh',
-            vad_filter=True
         )
         for segment in segments:
             words.append(segment.text)
