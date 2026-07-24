@@ -152,9 +152,44 @@ class LLMAPIService(ChatbotService):
                         tool_callbacks = await asyncio.gather(*(
                             tool_manager_reg.tool_manager.acall_tool(tool_call=tc) for tc in tool_calls_list
                         ))
+
+                        collected_images: List[str] = []
+                        for tool_callback in tool_callbacks:
+                            content = tool_callback.get('content', '')
+                            if isinstance(content, str):
+                                try:
+                                    data = json.loads(content)
+                                    if isinstance(data, dict):
+                                        images = data.get('images', [])
+                                        if isinstance(images, list) and images:
+                                            collected_images.extend(images)
+                                            tool_callback['content'] = json.dumps(
+                                                {'message': data.get(
+                                                    'message', 'completed')},
+                                                ensure_ascii=False,
+                                            )
+                                            continue
+                                except (json.JSONDecodeError, TypeError, AttributeError):
+                                    pass
+
                         self.messages.extend(tool_callbacks)
                         for callback in tool_callbacks:
                             await self._save_message(callback)
+
+                        if collected_images:
+                            image_parts: List[ChatCompletionContentPartParam] = [
+                            ]
+                            for img_url in collected_images:
+                                image_parts.append({
+                                    'type': 'image_url',
+                                    'image_url': {'url': img_url, 'detail': 'auto'},
+                                })
+                            image_user_msg = ChatCompletionUserMessageParam(
+                                role='user',
+                                content=image_parts,
+                            )
+                            self.messages.append(image_user_msg)
+                            await self._save_message(image_user_msg)
 
                     elif choice.finish_reason == 'stop':
                         if response_content_list:
