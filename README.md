@@ -46,6 +46,7 @@
 - Python >= 3.12
 - Flutter SDK >= 3.10.1 (运行客户端时)
 - 显存(VRAM) >= 6GB
+- FFmpeg：用于参考音频上传时的音频解码（`torchaudio` 加载失败时回退），安装方法见 [docs/install-ffmpeg.md](docs/install-ffmpeg.md)
 
 ## PyTorch (CUDA) / PyTorch 配置
 
@@ -142,7 +143,7 @@ WebSocket 端点：`ws://host:port/realtime-chat?session_id=<会话id>`（鉴权
 
 上传的音频会经过以下预处理流程：
 
-1. 用 `torchaudio` 加载（支持 WAV / MP3 / FLAC 等格式），失败则回退到 `ffmpeg` 提取音频流
+1. 用 `torchaudio` 加载（支持 WAV / MP3 / FLAC 等格式），失败则回退到 `ffmpeg` 提取音频流（需提前安装 FFmpeg，见 [docs/install-ffmpeg.md](docs/install-ffmpeg.md)）
 2. 转为单声道（多声道取均值混音）
 3. 重采样至 **16kHz**
 4. Silero VAD 检测说话片段，取前 3 个有效片段合并
@@ -376,6 +377,8 @@ realtime-chatbot/
 ├── service_registry.py            # 全局服务注册（VAD/ASR/LLM/TTS/客户端请求管理器）
 ├── database_engine.py             # 数据库引擎配置
 ├── config.example.json            # MCP 配置模板
+├── docs/
+│   └── install-ffmpeg.md          # FFmpeg 安装指南
 ├── pyproject.toml                 # Python 项目配置
 ├── .env.example                   # 环境变量模板
 ├── router/
