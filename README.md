@@ -50,7 +50,7 @@
 
 ## PyTorch (CUDA) / PyTorch 配置
 
-本项目**仅支持 CUDA 版 PyTorch**（不支持 CPU-only 版本）。`pyproject.toml` 默认配置为 **CUDA 12.6**，你需要确保你的电脑有 **显存 >= 6GB** 的 NVIDIA 显卡，并根据你电脑的 CUDA 版本修改配置。
+本项目**仅支持 CUDA 版 PyTorch**（不支持 CPU-only 版本）。`pyproject.toml` 默认配置为 **CUDA 13.0**，你需要确保你的电脑有 **显存 >= 6GB** 的 NVIDIA 显卡，并根据你电脑的 CUDA 版本修改配置。
 
 ### 1. 查看 CUDA 版本
 
@@ -60,11 +60,11 @@
 nvidia-smi
 ```
 
-输出右上角会显示 CUDA 版本（如 `CUDA Version: 12.6`）。
+输出右上角会显示 CUDA 版本（如 `CUDA Version: 12.6` 或 `CUDA UMD Version: 13.2`）。
 
 ### 2. 修改 `pyproject.toml`
 
-根据你的 CUDA 版本，将 `pyproject.toml` 中的 `cu126` 替换为对应的版本标签：
+根据你的 CUDA 版本，将 `pyproject.toml` 中的 `cu130` 替换为对应的版本标签：
 
 | CUDA 版本 | PyTorch 标签 |
 | --------- | ------------ |
