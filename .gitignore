@@ -11,7 +11,8 @@ wheels/
 .env
 
 
-audio/
+audio/*
+!audio/.gitkeep
 test.py
 *.db
 *.ipynb
