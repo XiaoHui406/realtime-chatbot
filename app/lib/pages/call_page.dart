@@ -8,7 +8,7 @@ import '../services/ws_service.dart';
 import '../services/audio_recorder.dart';
 import '../services/audio_player.dart';
 import '../services/wav_utils.dart';
-import '../services/screen_capturer.dart';
+import '../services/photo_album_picker.dart';
 import '../services/photo_capturer.dart';
 
 class CallPage extends StatefulWidget {
@@ -109,8 +109,8 @@ class _CallPageState extends State<CallPage> {
               case 'get_location':
                 _handleLocationRequest(requestId);
                 return;
-              case 'screenshot':
-                _handleScreenshotRequest(requestId);
+              case 'open_photo_album':
+                _handleOpenPhotoAlbumRequest(requestId);
                 return;
               case 'capture_photo':
                 _handleCameraRequest(requestId);
@@ -197,10 +197,10 @@ class _CallPageState extends State<CallPage> {
     }));
   }
 
-  Future<void> _handleScreenshotRequest(String requestId) async {
+  Future<void> _handleOpenPhotoAlbumRequest(String requestId) async {
     try {
       _requestInProgress = true;
-      final images = await ScreenCapturer.pick(context);
+      final images = await PhotoAlbumPicker.pick(context);
       _requestInProgress = false;
 
       if (!_wsService.isConnected) {

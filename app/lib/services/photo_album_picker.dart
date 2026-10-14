@@ -1,12 +1,14 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:photo_manager/photo_manager.dart';
 import '../pages/gallery_picker_page.dart';
 
-class ScreenCapturer {
+/// 打开系统相册让用户选图，压缩后以 base64 返回
+///
+/// 命名注意：本类只做相册选图，不做屏幕截图。
+class PhotoAlbumPicker {
   static const _maxImages = 5;
 
   static Future<List<String>?> pick(BuildContext context) async {
