@@ -105,17 +105,19 @@ class _ChatDetailPageState extends State<ChatDetailPage>
   }
 
   Future<void> _startCall() async {
+    // 在 async gap 之前取出 navigator，避免 await 之后再用 context
+    final navigator = Navigator.of(context);
     final mode = SettingsService().callMode;
     final useLive2D =
         mode == CallMode.live2d && await Live2DServer.isDistAvailable();
     if (useLive2D) {
-      await Navigator.of(context).push(
+      await navigator.push(
         MaterialPageRoute(
             builder: (_) =>
                 Live2DCallPage(sessionId: widget.sessionId)),
       );
     } else {
-      await Navigator.of(context).push(
+      await navigator.push(
         MaterialPageRoute(
             builder: (_) => CallPage(sessionId: widget.sessionId)),
       );
