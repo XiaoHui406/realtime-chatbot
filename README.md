@@ -1,21 +1,27 @@
 # Real-time Chatbot
 
-基于 WebSocket 的实时 AI 语音聊天机器人，支持语音输入，后端完成 VAD → ASR → LLM → TTS 全链路处理，并将合成语音实时推送回客户端播放。支持多会话管理、TTS 音色克隆、Function Calling / MCP 工具调用。
+基于 WebSocket 的实时 AI 语音聊天机器人，支持语音输入，后端完成 VAD → ASR → LLM → TTS 全链路处理，并将合成语音实时推送回客户端播放。支持多会话管理、TTS 音色克隆、Function Calling / MCP 工具调用，以及 Live2D 数字人形象与多模态图片输入（拍照 / 相册选图）。
 
-**客户端平台支持**：Android / iOS / macOS / Windows 桌面端，其中 **Android 和 Windows 已经过实际测试**，iOS / macOS 理论可用但未经验证。
+**客户端平台支持**：Android / Windows 桌面端（均已实际测试）。iOS / macOS 因**没有相应设备可测试，可用性尚未确认**，详见[平台支持说明](#平台支持说明--platform-support)。
+
+## Demo / 演示
+
+▶️ [演示视频（Bilibili）](https://www.bilibili.com/video/BV1WzJk6LEWx)
 
 ## Architecture / 架构
 
 ```
-┌──────────────────┐     WebSocket    ┌──────────────────────────────────────────────┐
-│   Flutter App    │ ◄──────────────► │              Python Backend                  │
-│  (Microphone)    │   audio bytes    │                                              │
-│  (Speaker)       │   ←→ PCM audio   │  VAD (Silero) → ASR  (SenseVoice)            │
-│  (会话管理 UI)    │                  │       → LLM (OpenAI API) ←→ MCP Servers      │
-│                  │    REST API      │       → TTS (Qwen3-TTS + cloning)            │
-│                  │ ◄──────────────► │  会话/消息持久化 (SQLite)                     │
-└──────────────────┘                  └──────────────────────────────────────────────┘
+┌──────────────────────────┐   WebSocket   ┌─────────────────────────────────────────────────┐
+│       Flutter App        │ ◄───────────► │                Python Backend                   │
+│                          │  audio bytes  │                                                 │
+│  Microphone / Speaker    │  ←→ PCM audio │  VAD (Silero) → ASR (SenseVoice)                │
+│  会话管理 / 通话 UI       │               │  → LLM (OpenAI API) ←→ MCP Servers              │
+│  Live2D WebView 形象      │   REST API    │  → TTS (Qwen3-TTS + cloning)                    │
+│  相机 / 相册              │ ◄───────────► │  会话 / 消息持久化 (SQLite)                      │
+└──────────────────────────┘               └─────────────────────────────────────────────────┘
 ```
+
+`get_location` / `capture_photo` / `open_photo_album` 等工具需要访问客户端硬件，由后端通过 **WebSocket 反向请求**（`{"type": "request", "action": ...}`）交由客户端执行，客户端以 `{"type": "response", "request_id": ..., "result": ...}` 回传结果。
 
 ### Pipeline / 处理流程
 
@@ -28,18 +34,20 @@
 
 ## Tech Stack / 技术栈
 
-| 模块     | 技术                                                                  |
-| -------- | --------------------------------------------------------------------- |
-| 后端框架 | FastAPI + Uvicorn                                                     |
-| VAD      | Silero VAD                                                            |
-| ASR      | FunASR (SenseVoiceSmall) / Faster-Whisper                             |
-| LLM      | OpenAI-compatible API                                                 |
-| TTS      | Qwen3-TTS 12Hz 0.6B                                                   |
-| 工具调用 | Function Calling + MCP (Model Context Protocol)                       |
-| 数据库   | SQLite + SQLAlchemy (async)                                           |
-| 客户端   | Flutter（Android / iOS / macOS / Windows，Android 与 Windows 已实测） |
-| 音频收发 | record (录音) / flutter_soloud (低延迟流式播放)                       |
-| 包管理   | uv (Python), pub (Flutter)                                            |
+| 模块     | 技术                                                             |
+| -------- | ---------------------------------------------------------------- |
+| 后端框架 | FastAPI + Uvicorn                                                |
+| VAD      | Silero VAD                                                       |
+| ASR      | FunASR (SenseVoiceSmall) / Faster-Whisper                        |
+| LLM      | OpenAI-compatible API                                            |
+| TTS      | Qwen3-TTS 12Hz 0.6B                                              |
+| 工具调用 | Function Calling + MCP (Model Context Protocol)                  |
+| 多模态   | 相机拍照 / 相册选图（`camera` + `photo_manager` + `image`）      |
+| 数据库   | SQLite + SQLAlchemy (async)                                      |
+| 客户端   | Flutter（已实测 Android / Windows 桌面端）                       |
+| 音频收发 | record (录音) / flutter_soloud (低延迟流式播放)                  |
+| Live2D   | Cubism SDK for Web 5-r.5（TypeScript + Vite 构建），WebView 承载 |
+| 包管理   | uv (Python), pub (Flutter), npm (Live2D 前端)                    |
 
 ## Prerequisites / 环境要求
 
@@ -47,6 +55,7 @@
 - Flutter SDK >= 3.10.1 (运行客户端时)
 - 显存(VRAM) >= 6GB
 - FFmpeg：用于参考音频上传时的音频解码（`torchaudio` 加载失败时回退），安装方法见 [docs/install-ffmpeg.md](docs/install-ffmpeg.md)
+- Node.js >= 18：仅在使用 Live2D 数字人时需要，用于构建 Live2D 前端资源（见 [Live2D 数字人](#live2d-数字人--live2d-avatar)）
 
 ## PyTorch (CUDA) / PyTorch 配置
 
@@ -310,11 +319,29 @@ async def web_search(web_search_params: WebSearchParams):
 
 ### 内置示例工具
 
-| 工具             | 文件                                      | 功能         | 依赖                                    |
-| ---------------- | ----------------------------------------- | ------------ | --------------------------------------- |
-| `web_search`     | `utils/tool_call/tools/web_search.py`     | 智谱联网搜索 | 需在 `.env` 中配置 `ZAI_API_KEY`        |
-| `weather_search` | `utils/tool_call/tools/weather_search.py` | 城市天气查询 | 无                                      |
-| `get_location`   | `utils/tool_call/tools/get_location.py`   | 获取用户定位 | 通过 websocket 向客户端请求，需通话在线 |
+| 工具               | 文件                                        | 功能                                  | 依赖                                    |
+| ------------------ | ------------------------------------------- | ------------------------------------- | --------------------------------------- |
+| `web_search`       | `utils/tool_call/tools/web_search.py`       | 智谱联网搜索                          | 需在 `.env` 中配置 `ZAI_API_KEY`        |
+| `weather_search`   | `utils/tool_call/tools/weather_search.py`   | 城市天气查询                          | 无                                      |
+| `get_location`     | `utils/tool_call/tools/get_location.py`     | 获取用户定位                          | 通过 websocket 向客户端请求，需通话在线 |
+| `capture_photo`    | `utils/tool_call/tools/capture_photo.py`    | 调用设备相机拍照并交给大模型分析      | 同上，需相机权限                        |
+| `open_photo_album` | `utils/tool_call/tools/open_photo_album.py` | 打开相册选图（最多 5 张）并交给大模型 | 同上，需相册权限                        |
+
+> `get_location` / `capture_photo` / `open_photo_album` 三个工具的实现方式特殊：它们不直接访问硬件，而是由后端通过 websocket 向客户端发起**反向请求**，由客户端完成定位或取图后回传 base64 结果。
+
+## Live2D 数字人 / Live2D Avatar
+
+客户端支持把 AI 的语音回复配上 **Live2D 数字人形象**并同步口型。该功能是**可选的**：未构建/未安装 Cubism SDK 时，设置页会自动把通话模式退回"普通通话"。
+
+前置条件（下载 Cubism SDK）、构建命令与构建后清缓存的说明见 [app/assets/live2d/README.md](app/assets/live2d/README.md)；构建完成后在 **设置页** 选择 `Live2D` 通话模式，并用 **管理 Live2D 模型** 导入模型 ZIP 包（含 `.model3.json` 即可）。
+
+### 实现方式
+
+- **渲染**：Flutter 在 `127.0.0.1` 启动本地 HTTP 服务提供 `dist/` 静态资源，用 `flutter_inappwebview` 加载，WebGL 渲染由 Cubism SDK 在 WebView 内完成
+- **口型同步**：按收到的音频块计算 RMS 音量并结合音频时长，用正弦波合成开合曲线驱动 `setMouthOpen`
+- **模型管理**：支持导入 ZIP、重命名、选择、删除；模型与元数据（`models.json`）存放在应用支持目录的 `live2d/` 下
+
+前端源码、`Live2DBridge` API 与许可证提示同样见 [app/assets/live2d/README.md](app/assets/live2d/README.md)。
 
 ## Quick Start / 快速开始
 
@@ -439,18 +466,33 @@ realtime-chatbot/
 └── LICENSE                        # MIT License
 ```
 
+## 平台支持说明 / Platform Support
+
+| 平台    | 状态      | 说明                               |
+| ------- | --------- | ---------------------------------- |
+| Android | ✅ 已实测 | —                                  |
+| Windows | ✅ 已实测 | —                                  |
+| iOS     | ❓ 未测试 | 缺乏测试设备，**能否运行尚未确认** |
+| macOS   | ❓ 未测试 | 缺乏测试设备，**能否运行尚未确认** |
+
+**已知的潜在障碍**：iOS 的 `Info.plist` 已有相机 / 相册 / 定位权限声明，但没有 `NSMicrophoneUsageDescription`；macOS 的 entitlements 只有沙箱与网络服务，没有麦克风、相机等权限。两者都缺少录音所需的权限声明，预计会影响语音通话，但**未在真机上验证过**，不排除还有其他问题。
+
+欢迎有对应设备的同学实测并反馈，或补充缺失的权限声明。
+
 ## Configuration / 配置说明
 
-| 配置项       | 文件                           | 说明                                             |
-| ------------ | ------------------------------ | ------------------------------------------------ |
-| LLM API Key  | `.env`                         | DeepSeek 或其他 OpenAI 兼容 API 密钥             |
-| LLM Model    | `.env`                         | 模型名称，默认 `deepseek-v4-flash`               |
-| 接口鉴权     | `.env`                         | `AUTH_API_KEY`，留空则关闭鉴权                   |
-| MCP 服务器   | `config.json`                  | MCP 服务器连接配置（参考 `config.example.json`） |
-| 采样率       | `main.py`                      | 默认 16000 Hz，上传音频自动重采样                |
-| 端点静音时长 | `main.py`                      | `MIN_SILENCE_DURATION_MS` 默认 200ms             |
-| 静音保护     | `main.py`                      | `IDLE_BUFFER_MAX_S` / `IDLE_BUFFER_KEEP_S`       |
-| 服务器地址   | `app/lib/services/config.dart` | 客户端连接的后端地址                             |
+| 配置项       | 文件                           | 说明                                              |
+| ------------ | ------------------------------ | ------------------------------------------------- |
+| LLM API Key  | `.env`                         | DeepSeek 或其他 OpenAI 兼容 API 密钥              |
+| LLM Model    | `.env`                         | 模型名称，默认 `deepseek-v4-flash`                |
+| 接口鉴权     | `.env`                         | `AUTH_API_KEY`，留空则关闭鉴权                    |
+| MCP 服务器   | `config.json`                  | MCP 服务器连接配置（参考 `config.example.json`）  |
+| 采样率       | `main.py`                      | 默认 16000 Hz，上传音频自动重采样                 |
+| 端点静音时长 | `main.py`                      | `MIN_SILENCE_DURATION_MS` 默认 200ms              |
+| 静音保护     | `main.py`                      | `IDLE_BUFFER_MAX_S` / `IDLE_BUFFER_KEEP_S`        |
+| 服务器地址   | `app/lib/services/config.dart` | 客户端连接的后端地址，默认为本机 `127.0.0.1:8000` |
+| API Key      | App 设置页                     | 与后端 `AUTH_API_KEY` 对应，留空则不鉴权          |
+| 通话模式     | App 设置页                     | `普通通话` / `Live2D`，也可在设置页管理模型       |
 
 ## License
 
